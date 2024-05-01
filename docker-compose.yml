@@ -1,12 +1,7 @@
+version: "3.1"
 services:
   FreeDuckDuckGo:
     image: ghcr.io/missuo/freeduckduckgo:latest
     restart: always
     ports:
       - "3456:3456"
-
-#  FreeGPT35:
-#    image: missuo/freegpt35:latest
-#    restart: always
-#    ports:
-#      - "3040:3040"

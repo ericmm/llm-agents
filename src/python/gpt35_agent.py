@@ -1,12 +1,16 @@
-from langchain.agents import AgentExecutor, Tool, create_react_agent
+from langchain.agents import AgentExecutor, Tool
+from langchain.agents.format_scratchpad import format_log_to_str
 from langchain.chains import LLMMathChain
 from langchain.globals import set_debug
 from langchain.memory.buffer_window import ConversationBufferWindowMemory
+from langchain.tools.render import render_text_description
 from langchain_community.utilities import DuckDuckGoSearchAPIWrapper
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_openai import ChatOpenAI
 
-from prompts import AGENT_PROMPT_TEMPLATE
+from prompts import AGENT_SYSTEM_PROMPT_TEMPLATE, AGENT_USER_PROMPT_TEMPLATE
+from react_output_parser import ReActSingleInputOutputParser2
+from yahoo_finance_tool import YahooFinanceNewsTool2
 
 set_debug(True)
 
@@ -15,19 +19,21 @@ if __name__ == "__main__":
 
   llm = ChatOpenAI(model="gpt-3.5-turbo",
                    openai_api_key="your-api-key",
-                   openai_api_base="http://127.0.0.1:3040/v1",
+                   openai_api_base="http://127.0.0.1:3456/v1",
                    temperature=0,
                    verbose=True,
                    streaming=True,)
 
-  ddg_search = DuckDuckGoSearchAPIWrapper(region="au-en", max_results=1)
+  ddg_search = DuckDuckGoSearchAPIWrapper(region="au-en", max_results=2)
+  yahoo_finance_news = YahooFinanceNewsTool2(top_k=2)
   llm_math_chain = LLMMathChain.from_llm(llm=llm, verbose=True)
 
   tools = [
+    yahoo_finance_news,
     Tool(
         name="Web Search",
         func=ddg_search.run,
-        description="Useful for when you need to search information from the internet (e.g weather, people, stock, etc.), " +
+        description="Useful for when you need to search information from the internet (e.g weather, people, etc.), " +
                     "the input must be a single string parameter (search query)",
     ),
     Tool.from_function(
@@ -38,17 +44,32 @@ if __name__ == "__main__":
     ),
   ]
 
-  agent_prompt = ChatPromptTemplate.from_messages(
-      [("user", AGENT_PROMPT_TEMPLATE)]
+  agent_prompt = ChatPromptTemplate.from_messages([
+    ("system", AGENT_SYSTEM_PROMPT_TEMPLATE),
+    ("user", AGENT_USER_PROMPT_TEMPLATE),
+  ])
+  prompt = agent_prompt.partial(
+      tools=render_text_description(tools),
+      tool_names=", ".join([t.name for t in tools]),
   )
-  agent = create_react_agent(llm, tools, agent_prompt)
+
+  llm_with_stop = llm.bind(stop=["\nObservation"])
+  agent = (
+      {
+        "input": lambda x: x["input"],
+        "agent_scratchpad": lambda x: format_log_to_str(x["intermediate_steps"]),
+        "chat_history": lambda x: x["chat_history"],
+      }
+      | prompt
+      | llm_with_stop
+      | ReActSingleInputOutputParser2()
+  )
 
   memory = ConversationBufferWindowMemory(memory_key="chat_history", k=10)
   agent_executor = AgentExecutor(agent=agent,
                                  tools=tools,
-                                 verbose=True,
                                  memory=memory,
-                                 handle_parsing_errors=True)
+                                 verbose=True,)
 
   while True:
     query = input("Please enter your query (type 'exit' to quit):\n")

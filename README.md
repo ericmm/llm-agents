@@ -6,7 +6,7 @@ brew install python@3.10
 pip install virtualenv
 ```
 
-- Step 2: create virtual env (from the project root folder)
+- Step 2: create virtual env (**from the project root folder**)
 ```bash
 virtualenv -p python3.10 .venv
 ```
@@ -33,4 +33,16 @@ Install dependencies, also switch to `src/python` folder
 ```bash
 cd src/python
 pip install -r requirements.txt
+```
+
+- Step 4: startup FreeGPT3.5 docker, it opens a port on 3040 
+```bash
+cd ../..
+docker-compose up -d
+```
+
+- Step 5: run the app
+```bash
+cd src/python
+python gpt35_agent.py
 ```
