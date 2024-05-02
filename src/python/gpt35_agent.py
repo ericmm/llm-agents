@@ -12,7 +12,7 @@ from prompts import AGENT_SYSTEM_PROMPT_TEMPLATE, AGENT_USER_PROMPT_TEMPLATE
 from react_output_parser import ReActSingleInputOutputParser2
 from yahoo_finance_tool import YahooFinanceNewsTool2
 
-set_debug(True)
+set_debug(False)
 
 
 if __name__ == "__main__":
