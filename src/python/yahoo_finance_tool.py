@@ -10,7 +10,9 @@ class YahooFinanceNewsTool2(BaseTool):
 
   name: str = "yahoo_finance"
   description: str = (
-    "Useful for when you need to find financial info about a public company or ETF fund. "
+    "Useful for when you need to find financial info about an equity or ETF fund. "
+    "For the equity, it provides info like exchange, country, industry, sector, price, etc."
+    "For the ETF fund, it also provides holdings & corresponding percentages, and sector weightings."
     "Input should be a company or fund ticker only, for example, AAPL for Apple, VOO for Vanguard S&P 500 ETF."
   )
 
