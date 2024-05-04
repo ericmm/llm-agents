@@ -40,7 +40,8 @@ if __name__ == "__main__":
         func=llm_math_chain.run,
         name="Calculator",
         description="Useful for when you need to answer questions about very simple math. " +
-                    "This tool is only for math questions and nothing else. ",
+                    "This tool is only for math questions and nothing else, " +
+                    "the input must be a math expressions, e.g. 123 + 456",
     ),
   ]
 

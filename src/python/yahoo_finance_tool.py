@@ -1,3 +1,6 @@
+import ffn
+import yahooquery
+import yfinance
 from langchain_core.callbacks import CallbackManagerForToolRun
 from langchain_core.tools import BaseTool
 from requests.exceptions import HTTPError, ReadTimeout
@@ -11,9 +14,9 @@ class YahooFinanceNewsTool2(BaseTool):
   name: str = "yahoo_finance"
   description: str = (
     "Useful for when you need to find financial info about an equity or ETF fund. "
-    "For the equity, it provides info like exchange, country, industry, sector, price, etc."
-    "For the ETF fund, it also provides holdings & corresponding percentages, and sector weightings."
-    "Input should be a company or fund ticker only, for example, AAPL for Apple, VOO for Vanguard S&P 500 ETF."
+    "Input must be a SINGLE equity or fund ticker only, for example, AAPL for Apple, VOO for Vanguard S&P 500 ETF."
+    "For the equity, it provides info like exchange, country, industry, sector, price, yearly returns, etc."
+    "For the ETF fund, it also provides holdings & corresponding percentages, sector weightings and yearly returns."
   )
 
   def _run(
@@ -22,25 +25,13 @@ class YahooFinanceNewsTool2(BaseTool):
       run_manager: Optional[CallbackManagerForToolRun] = None,
   ) -> str:
     """Use the Yahoo Finance tool."""
-    try:
-      import yfinance
-    except ImportError:
-      raise ImportError(
-          "Could not import yfinance python package. "
-          "Please install it with `pip install yfinance`."
-      )
 
-    try:
-      import yahooquery
-    except ImportError:
-      raise ImportError(
-          "Could not import yahooquery  python package. "
-          "Please install it with `pip install yahooquery`."
-      )
+    if len(query) > 10 and ',' in query:
+      return f"Invalid ticker {query}, must be ONE ticker at a time, e.g. MSFT"
 
     yf_ticker = None
     try:
-      yf_ticker = yfinance.Ticker(query)
+      yf_ticker = yfinance.Ticker(query.upper())
       if yf_ticker is None:
         return f"Company ticker {query} not found."
     except (HTTPError, ReadTimeout, ConnectionError):
@@ -48,25 +39,34 @@ class YahooFinanceNewsTool2(BaseTool):
 
     yq_ticker = None
     try:
-      yq_ticker = yahooquery.Ticker(query)
+      yq_ticker = yahooquery.Ticker(query.upper())
     except (HTTPError, ReadTimeout, ConnectionError):
       # do nothing as we have yf_ticker info
       print(f"Company ticker {query} not found by yahooquery.")
 
-    return YahooFinanceNewsTool2._format_results(yf_ticker, yq_ticker)
+    ffn_ticker = None
+    try:
+      # get the returns data since year 2022
+      ffn_ticker = ffn.get(query.lower(), start='2022-01-01')
+    except (HTTPError, ReadTimeout, ConnectionError):
+      # do nothing as we have yf_ticker info
+      print(f"Company ticker {query} not found by ffn.")
+
+    return YahooFinanceNewsTool2._format_results(query, yf_ticker, yq_ticker, ffn_ticker)
 
 
   @staticmethod
-  def _format_results(yf_ticker, yq_ticker) -> str:
+  def _format_results(query, yf_ticker, yq_ticker, ffn_ticker) -> str:
     quote_type = yf_ticker.info.get('quoteType', '')
     if quote_type.strip().upper() == 'ETF':
-      return YahooFinanceNewsTool2._format_etf(yf_ticker.info, yq_ticker)
+      return YahooFinanceNewsTool2._format_etf(query, yf_ticker.info, yq_ticker, ffn_ticker)
     else:
-      return YahooFinanceNewsTool2._format_stock(yf_ticker.info)
+      return YahooFinanceNewsTool2._format_stock(query,yf_ticker.info, ffn_ticker)
 
 
   @staticmethod
-  def _format_stock(info) -> str:
+  def _format_stock(query, info, ffn_ticker) -> str:
+    return_info = YahooFinanceNewsTool2._format_return_info(query, ffn_ticker)
     return f"""symbol: {info.get('symbol', '')}
 quoteType: {info.get('quoteType', '')}
 shortName: {info.get('shortName', '')}
@@ -78,10 +78,11 @@ previousClose: {info.get('previousClose', '')}
 open: {info.get('open', '')}
 currentPrice: {info.get('currentPrice', '')}
 currency: {info.get('currency', '')}
+{return_info}
 """
 
   @staticmethod
-  def _format_etf(info, yq_ticker) -> str:
+  def _format_etf(query, info, yq_ticker, ffn_ticker) -> str:
     etf_summary = f"""symbol: {info.get('symbol', '')}
 quoteType: {info.get('quoteType', '')}
 shortName: {info.get('shortName', '')}
@@ -98,21 +99,39 @@ currency: {info.get('currency', '')}
     if len(holdings) > 0:
       holdings_info +="\nholdings:\n"
       for h in holdings:
-        holdings_info += f"{h['symbol']}, {h['holdingPercent']}\n"
+        holdings_info += f"{h['symbol']}: {h['holdingPercent']:.2%}\n"
 
-    sector_info = YahooFinanceNewsTool2._format_etf_sector(yq_ticker.fund_sector_weightings.to_string())
-    return etf_summary + holdings_info + sector_info
+    sector_info = YahooFinanceNewsTool2._format_etf_sector(query, yq_ticker.fund_sector_weightings)
+    return_info = YahooFinanceNewsTool2._format_return_info(query, ffn_ticker)
+    return etf_summary + holdings_info + sector_info + return_info
 
   @staticmethod
-  def _format_etf_sector(sector_info: str) -> str:
-    # remove first two lines
-    sector_info = "\n".join(sector_info.split("\n")[2:])
+  def _format_etf_sector(query, sector_weightings) -> str:
+    sector_info = ''
+    if sector_weightings is not None:
+      sw_series = sector_weightings.get(query, None)
+      if sw_series is not None:
+        for i in sw_series.index:
+          if float(sw_series[i]) > 0:
+            sector_info += f'{i}: {sw_series[i]:.2%}\n'
 
-    # remove multiple empty spaces in the middle
-    while '  ' in sector_info:
-      sector_info = sector_info.replace('  ', ' ')
-
-    # replace single space to comma
-    sector_info = sector_info.replace(' ', ', ')
-    sector_info = "\nsector weightings:\n" + sector_info
+    if len(sector_info) > 0:
+      sector_info = "\nsector weightings:\n" + sector_info
     return sector_info
+
+
+  @staticmethod
+  def _format_return_info(query, ffn_ticker) -> str:
+    return_info = ''
+    if ffn_ticker is not None:
+      stats = ffn_ticker.calc_stats().get(query.lower(), None)
+      if stats is not None:
+        return_table = stats.return_table
+        if return_table is not None:
+          for k in return_table.index:
+            return_info +=f'{k}: {return_table.loc[k].values.data[12]:.2%}\n'
+
+    if len(return_info) > 0:
+      return '\nyearly returns:\n' + return_info
+    else:
+      return return_info
