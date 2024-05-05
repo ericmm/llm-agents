@@ -11,6 +11,10 @@ from langchain_openai import ChatOpenAI
 from prompts import AGENT_SYSTEM_PROMPT_TEMPLATE, AGENT_USER_PROMPT_TEMPLATE
 from react_output_parser import ReActSingleInputOutputParser2
 from yahoo_finance_tool import YahooFinanceNewsTool2
+from langchain_community.agent_toolkits import PlayWrightBrowserToolkit
+from langchain_community.tools.playwright.utils import (
+  create_sync_playwright_browser,
+)
 
 set_debug(False)
 
@@ -28,6 +32,9 @@ if __name__ == "__main__":
   yahoo_finance_news = YahooFinanceNewsTool2(top_k=2)
   llm_math_chain = LLMMathChain.from_llm(llm=llm, verbose=True)
 
+  sync_browser = create_sync_playwright_browser()
+  browser_tools = PlayWrightBrowserToolkit.from_browser(sync_browser=sync_browser).get_tools()
+
   tools = [
     yahoo_finance_news,
     Tool(
@@ -44,6 +51,7 @@ if __name__ == "__main__":
                     "the input must be a math expressions, e.g. 123 + 456",
     ),
   ]
+  tools.extend(browser_tools)
 
   agent_prompt = ChatPromptTemplate.from_messages([
     ("system", AGENT_SYSTEM_PROMPT_TEMPLATE),
@@ -70,7 +78,8 @@ if __name__ == "__main__":
   agent_executor = AgentExecutor(agent=agent,
                                  tools=tools,
                                  memory=memory,
-                                 verbose=True,)
+                                 verbose=True,
+                                 handle_parsing_errors=True,)
 
   while True:
     query = input("Please enter your query (type 'exit' to quit):\n")
