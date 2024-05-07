@@ -46,8 +46,8 @@ class YahooFinanceNewsTool2(BaseTool):
 
     ffn_ticker = None
     try:
-      # get the returns data since year 2022
-      ffn_ticker = ffn.get(query.lower(), start='2022-01-01')
+      # get the returns data for 10 years
+      ffn_ticker = ffn.get(query.lower(), start='2014-01-01')
     except (HTTPError, ReadTimeout, ConnectionError):
       # do nothing as we have yf_ticker info
       print(f"Company ticker {query} not found by ffn.")
@@ -78,6 +78,7 @@ previousClose: {info.get('previousClose', '')}
 open: {info.get('open', '')}
 currentPrice: {info.get('currentPrice', '')}
 currency: {info.get('currency', '')}
+marketCap: {info.get('marketCap', '0')}
 {return_info}
 """
 
@@ -125,13 +126,11 @@ currency: {info.get('currency', '')}
     return_info = ''
     if ffn_ticker is not None:
       stats = ffn_ticker.calc_stats().get(query.lower(), None)
-      if stats is not None:
-        return_table = stats.return_table
-        if return_table is not None:
-          for k in return_table.index:
-            return_info +=f'{k}: {return_table.loc[k].values.data[12]:.2%}\n'
+      if stats is not None and stats.lookback_returns is not None:
+        for k in ['ytd', '1y', '3y', '5y', '10y']:
+          return_info +=f'{k}: {stats.lookback_returns[k]:.2%}\n'
 
     if len(return_info) > 0:
-      return '\nyearly returns:\n' + return_info
+      return '\nreturns:\n' + return_info
     else:
       return return_info
