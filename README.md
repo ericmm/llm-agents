@@ -1,16 +1,21 @@
 # llm-agents
 
-- Step 1: install Python3.10 and `virtualenv`
+- Step 1: install Python3.10 and `virtualenv` (only need to do this step once)
 ```bash
 brew install python@3.10
 pip install virtualenv
 ```
 
-- Step 2: create virtual env (**from the project root folder**)
+- Step 2: create virtual env (**from the project root folder**, only need to do this step once)
 ```bash
 virtualenv -p python3.10 .venv
 ```
-Active your virtual environment:
+Upgrade python pip first
+```bash
+python -m pip install --upgrade pip
+```
+
+- Step 3: Active your virtual environment:
 ```bash
 source .venv/bin/activate
 ```
@@ -24,25 +29,26 @@ When you want to switch back to system default Python, you can use deactivate co
 deactivate
 ```
 
-- Step 3: install dependencies
-Upgrade python pip first
-```bash
-python -m pip install --upgrade pip
-```
-Install dependencies, also switch to `src/python` folder
+- Step 4: install dependencies (please switch to `src/python` folder)
 ```bash
 cd src/python
 pip install -r requirements.txt
 ```
 
-- Step 4: startup FreeGPT3.5 docker, it opens a port on 3040 
+- Step 5: Run llm agents 
+startup FreeGPT3.5 docker, it opens a port on 3040 
 ```bash
 cd ../..
 docker-compose up -d
 ```
-
-- Step 5: run the app
+run the llm agents app
 ```bash
 cd src/python
 python gpt35_agent.py
 ```
+
+- Step 6: Run the webpage app (make sure you are in `src/python` folder)
+```bash
+streamlit run portfolio_mate.py
+```
+The app is available on http://localhost:8501
