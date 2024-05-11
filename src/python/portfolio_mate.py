@@ -1,11 +1,12 @@
+import bt
 import pandas as pd
 import streamlit as st
+import time
 import yfinance as yf
-#from st_aggrid import AgGrid
+# from st_aggrid import AgGrid
 from bs4 import BeautifulSoup
 from playwright.sync_api import sync_playwright
-import bt
-import time
+
 
 def do_fetch_fake_holdings(ticker: str) ->  pd.DataFrame:
   # simulate fetch action, for testing only
@@ -85,26 +86,48 @@ def remove_uncheked_holdings(edited_data: pd.DataFrame):
   st.session_state.holdings = new_data
 
 
-def build_back_test(data: pd.DataFrame, strategies: list[str]):
+def calc_weight_by_market_cap(selected_df: pd.DataFrame):
+  weights = {}
+  symbol_col = selected_df['symbol']
+  market_cap_col = selected_df['marketCap']
+  total_market_cap = 0
+  for m in market_cap_col:
+    total_market_cap += m
+  for idx, s in enumerate(symbol_col):
+    weights[s.lower()] = float(market_cap_col[idx] / total_market_cap)
+  return weights
+
+def build_back_test(selected_df: pd.DataFrame, data: pd.DataFrame, strategies: list[str]):
   tests = []
-  runMonthlyAlgo = bt.algos.RunMonthly()
-  selectAllAlgo = bt.algos.SelectAll()
-  rebalanceAlgo = bt.algos.Rebalance()
+  run_monthly_algo = bt.algos.RunMonthly()
+  select_all_algo = bt.algos.SelectAll()
+  rebalance_algo = bt.algos.Rebalance()
+  # selectNAlgo = bt.algos.SelectN(2)
   for strategy_name in strategies:
     if strategy_name == "Equally Weighted":
-      weightedAlgo = bt.algos.WeighEqually()
+      weighted_algo = bt.algos.WeighEqually()
+
     elif strategy_name == "MarketCap Weighted":
-      #TODO: fix me, we need to define a new algo
-      weightedAlgo = bt.algos.WeighInvVol()
+      weights = calc_weight_by_market_cap(selected_df)
+      weighted_algo = bt.algos.WeighSpecified(**weights)
+
+    elif strategy_name == "Using Weights Above":
+      weights = {}
+      # use weights in dataframe
+      symbol_col = selected_df['symbol']
+      weight_col = selected_df['weight']
+      for idx, s in enumerate(symbol_col):
+        weights[s.lower()] = weight_col[idx]
+      weighted_algo = bt.algos.WeighSpecified(**weights)
 
     # build strategy
     strategy = bt.Strategy(
         strategy_name,
         [
-          runMonthlyAlgo,
-          selectAllAlgo,
-          weightedAlgo,
-          rebalanceAlgo
+          run_monthly_algo,
+          select_all_algo,
+          weighted_algo,
+          rebalance_algo
         ]
     )
     # create back test using strategy with data
@@ -127,7 +150,7 @@ def calc_returns(selected_df: pd.DataFrame, strategies: list[str]):
     st.error("Please select at least one strategy.")
 
   data = download_history_data(selected_df)
-  tests = build_back_test(data, strategies)
+  tests = build_back_test(selected_df, data, strategies)
 
   # run the back testing and save the result
   st.session_state.result = bt.run(*tests)
@@ -212,15 +235,17 @@ if (st.session_state.get('page_state','') == 'NEXT_STEP'
       'marketCap' : st.column_config.NumberColumn(label='MarketCap'),
     }
     selected_df = st.data_editor(data=selected_holdings,
-                               hide_index = True,
-                               column_config = config,)
+                                 hide_index = True,
+                                 column_config = config,)
+    selected_df.reset_index(inplace=True)
+    # drop the old 'index' column
+    selected_df.drop('index', axis=1, inplace=True)
 
-    options = st.multiselect("Select strategy", ("Equally Weighted", "MarketCap Weighted"))
+    options = st.multiselect("Select strategy", ("Equally Weighted", "MarketCap Weighted", "Using Weights Above"))
     st.button("Calculate returns", on_click=calc_returns, args=(selected_df,options,))
 
     result = st.session_state.get('result', None)
     if result is not None:
-      #TODO: fix display
-      st.dataframe(result)
+      st.dataframe(data=result.stats)
   else:
     st.error("No holding is selected")
