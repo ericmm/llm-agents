@@ -25,7 +25,10 @@ def on_fetch_holdings(ticker: str):
     st.error("You haven't specify a fund ticker yet")
   else:
     with st.spinner(f"Fetching the fund {ticker}... it may take a few minutes, please kindly be patient."):
-      data = do_fetch_fake_holdings(ticker)
+      if st.session_state.use_fake:
+        data = do_fetch_fake_holdings(ticker)
+      else:
+        data = do_fetch_holdings(ticker)
     st.session_state.page_state = 'DATA_FETCHED'
     st.session_state.holdings = data
     st.session_state.ticker = ticker.strip().upper()
@@ -60,7 +63,7 @@ def do_fetch_holdings(ticker: str) -> pd.DataFrame:
       if '<a' in h[1]:
         soup = BeautifulSoup(h[1], 'html.parser')
         # some holdings do not have symbols, e.g. 'US Dollars', etc.
-        symbol = soup.a.get_text().repalce('N/A', '')
+        symbol = soup.a.get_text().replace('N/A', '')
 
       shares = float(h[2].replace(',',''))
       weight = float(h[3].replace(',',''))/100
@@ -102,6 +105,7 @@ def build_back_test(selected_df: pd.DataFrame, data: pd.DataFrame, strategies: l
   run_monthly_algo = bt.algos.RunMonthly()
   select_all_algo = bt.algos.SelectAll()
   rebalance_algo = bt.algos.Rebalance()
+  weighted_algo = None
   # selectNAlgo = bt.algos.SelectN(2)
   for strategy_name in strategies:
     if strategy_name == "Equally Weighted":
@@ -140,7 +144,6 @@ def build_back_test(selected_df: pd.DataFrame, data: pd.DataFrame, strategies: l
 def download_history_data(selected_df: pd.DataFrame):
   symbol_list = selected_df['symbol'].to_list()
   comma_sep_symbols = ','.join(symbol_list)
-  # TODO: fix me, fetch batch by batch
   return bt.get(comma_sep_symbols, start='2014-01-01')
 
 
@@ -192,6 +195,9 @@ def enrich_holdings(selected_holdings):
 # Main page start here
 st.title("Welcome to Portfolio Mate")
 
+use_fake = st.checkbox("Use fake holdings", value=True)
+st.session_state.use_fake = use_fake == True
+
 ticker = st.text_input(label="Fund Ticker", placeholder="Please enter a fund ticker, e.g. SPY")
 
 st.button("Fetch", on_click=on_fetch_holdings, args=(ticker,))
@@ -222,7 +228,9 @@ if (st.session_state.get('page_state','') == 'NEXT_STEP'
     or st.session_state.get('page_state','') == 'CALC_RETURNS'):
   selected_holdings = st.session_state.holdings
   if selected_holdings is not None:
-    enrich_holdings(selected_holdings)
+    if st.session_state.get('enriched', False) == False:
+      enrich_holdings(selected_holdings)
+      st.session_state.enriched = True
 
     config = {
       'name' : st.column_config.TextColumn(label='Name'),
