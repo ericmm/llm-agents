@@ -255,5 +255,6 @@ if (st.session_state.get('page_state','') == 'NEXT_STEP'
     result = st.session_state.get('result', None)
     if result is not None:
       st.dataframe(data=result.stats)
+      st.line_chart(data=result.prices)
   else:
     st.error("No holding is selected")
