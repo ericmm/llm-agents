@@ -1,4 +1,5 @@
 import bt
+import datetime
 import pandas as pd
 import streamlit as st
 import time
@@ -20,7 +21,7 @@ def do_fetch_fake_holdings(ticker: str) ->  pd.DataFrame:
   ])
 
 
-def on_fetch_holdings(ticker: str):
+def on_fetch_holdings(ticker: str, start_date: str):
   if len(ticker.strip()) == 0:
     st.error("You haven't specify a fund ticker yet")
   else:
@@ -32,6 +33,7 @@ def on_fetch_holdings(ticker: str):
     st.session_state.page_state = 'DATA_FETCHED'
     st.session_state.holdings = data
     st.session_state.ticker = ticker.strip().upper()
+    st.session_state.start_date = (start_date or datetime.date(2014, 1, 1)).strftime("%Y-%m-%d")
 
 
 def do_fetch_holdings(ticker: str) -> pd.DataFrame:
@@ -100,6 +102,19 @@ def calc_weight_by_market_cap(selected_df: pd.DataFrame):
     weights[s.lower()] = float(market_cap_col[idx] / total_market_cap)
   return weights
 
+
+def build_benchmark_test():
+  s = bt.Strategy(f'Benchmark: {st.session_state.benchmark_ticker}',
+                  # [bt.algos.RunOnce(),
+                  [bt.algos.RunMonthly(),
+                   bt.algos.SelectAll(),
+                   bt.algos.WeighEqually(), # only one ticker, so it's 100%
+                   bt.algos.Rebalance()])
+  data = bt.get(st.session_state.benchmark_ticker,
+                start=st.session_state.start_date)
+  return bt.Backtest(s, data)
+
+
 def build_back_test(selected_df: pd.DataFrame, data: pd.DataFrame, strategies: list[str]):
   tests = []
   run_monthly_algo = bt.algos.RunMonthly()
@@ -138,20 +153,29 @@ def build_back_test(selected_df: pd.DataFrame, data: pd.DataFrame, strategies: l
     test = bt.Backtest(strategy, data)
     tests.append(test)
 
+  # add benchmark test
+  tests.append(build_benchmark_test())
   return tests
 
 
 def download_history_data(selected_df: pd.DataFrame):
   symbol_list = selected_df['symbol'].to_list()
+  if st.session_state.benchmark_ticker not in symbol_list:
+    symbol_list.append(st.session_state.benchmark_ticker)
   comma_sep_symbols = ','.join(symbol_list)
-  return bt.get(comma_sep_symbols, start='2014-01-01')
+  return bt.get(comma_sep_symbols, start=st.session_state.start_date)
 
 
-def calc_returns(selected_df: pd.DataFrame, strategies: list[str]):
+def calc_returns(selected_df: pd.DataFrame, strategies: list[str], benchmark_ticker: str):
   st.session_state.page_state = 'CALC_RETURNS'
   if len(strategies) == 0:
     st.error("Please select at least one strategy.")
+    return
+  elif len(benchmark_ticker) == 0:
+    st.error("Please enter a benchmark ticker.")
+    return
 
+  st.session_state.benchmark_ticker = benchmark_ticker.upper()
   data = download_history_data(selected_df)
   tests = build_back_test(selected_df, data, strategies)
 
@@ -198,9 +222,17 @@ st.title("Welcome to Portfolio Mate")
 use_fake = st.checkbox("Use fake holdings", value=True)
 st.session_state.use_fake = use_fake == True
 
-ticker = st.text_input(label="Fund Ticker", placeholder="Please enter a fund ticker, e.g. SPY")
+cols=st.columns(2)
+with cols[0]:
+  ticker = st.text_input(label="Fund Ticker", placeholder="Please enter a fund ticker, e.g. SPY")
+with cols[1]:
+  date = st.date_input(label="Data since (for getting historical price data)",
+                       value=datetime.date(2014, 1, 1),
+                       min_value=datetime.date(2000, 1, 1),
+                       max_value=datetime.date.today(),
+                       format="YYYY-MM-DD")
 
-st.button("Fetch", on_click=on_fetch_holdings, args=(ticker,))
+st.button("Fetch", on_click=on_fetch_holdings, args=(ticker, date))
 
 print(st.session_state.get('page_state',''))
 
@@ -250,11 +282,75 @@ if (st.session_state.get('page_state','') == 'NEXT_STEP'
     selected_df.drop('index', axis=1, inplace=True)
 
     options = st.multiselect("Select strategy", ("Equally Weighted", "MarketCap Weighted", "Using Weights Above"))
-    st.button("Calculate returns", on_click=calc_returns, args=(selected_df,options,))
+    benchmark_ticker = st.text_input(label="Benchmark Ticker", placeholder="Please enter a benchmark ticker, e.g. MSFT or SPY")
+    st.button("Calculate returns", on_click=calc_returns, args=(selected_df,options,benchmark_ticker))
 
     result = st.session_state.get('result', None)
     if result is not None:
-      st.dataframe(data=result.stats)
-      st.line_chart(data=result.prices)
+      stats_data = result.stats.T.copy()
+      percentage_columns = ['rf', 'total_return', 'cagr', 'max_drawdown', 'mtd',
+                            'three_month', 'six_month', 'ytd', 'one_year', 'three_year',
+                            'five_year', 'ten_year', 'incep', 'daily_mean', 'daily_vol',
+                            'best_day', 'worst_day', 'monthly_mean', 'monthly_vol', 'best_month',
+                            'worst_month', 'yearly_mean', 'yearly_vol', 'best_year', 'worst_year',
+                            'avg_drawdown', 'avg_up_month', 'avg_down_month', 'win_year_perc', 'twelve_month_win_perc',]
+      for col in percentage_columns:
+        stats_data[col] = stats_data[col] * 100
+
+      stats_config = {
+        'start' : st.column_config.DateColumn(label='Start', format="YYYY-MM-DD",),
+        'end' : st.column_config.DateColumn(label='End', format="YYYY-MM-DD",),
+        'rf' : st.column_config.NumberColumn(label='Risk-free rate', format="%.2f%%",),
+        'total_return' : st.column_config.NumberColumn(label='Total Return', format="%.2f%%",),
+        'cagr' : st.column_config.NumberColumn(label='CAGR', format="%.2f%%",),
+        'max_drawdown' : st.column_config.NumberColumn(label='Max Drawdown', format="%.2f%%",),
+        'calmar' : st.column_config.NumberColumn(label='Calmar Ratio', format="%.2f",),
+        'mtd' : st.column_config.NumberColumn(label='MTD', format="%.2f%%",),
+        'three_month' : st.column_config.NumberColumn(label='3m', format="%.2f%%",),
+        'six_month' : st.column_config.NumberColumn(label='6m', format="%.2f%%",),
+        'ytd' : st.column_config.NumberColumn(label='YTD', format="%.2f%%",),
+        'one_year' : st.column_config.NumberColumn(label='1y', format="%.2f%%",),
+        'three_year' : st.column_config.NumberColumn(label='3Y (ann.)', format="%.2f%%",),
+        'five_year' : st.column_config.NumberColumn(label='5Y (ann.)', format="%.2f%%",),
+        'ten_year' : st.column_config.NumberColumn(label='10Y (ann.)', format="%.2f%%",),
+        'incep' : st.column_config.NumberColumn(label='Since Incep. (ann.)', format="%.2f%%",),
+        'daily_sharpe' : st.column_config.NumberColumn(label='Daily Sharpe', format="%.2f",),
+        'daily_sortino' : st.column_config.NumberColumn(label='Daily Sortino', format="%.2f",),
+        'daily_mean' : st.column_config.NumberColumn(label='Daily Mean (ann.)', format="%.2f%%",),
+        'daily_vol' : st.column_config.NumberColumn(label='Daily Vol (ann.)', format="%.2f%%",),
+        'daily_skew' : st.column_config.NumberColumn(label='Daily Skew', format="%.2f",),
+        'daily_kurt' : st.column_config.NumberColumn(label='Daily Kurt', format="%.2f",),
+        'best_day' : st.column_config.NumberColumn(label='Best Day', format="%.2f%%",),
+        'worst_day' : st.column_config.NumberColumn(label='Worst Day', format="%.2f%%",),
+        'monthly_sharpe' : st.column_config.NumberColumn(label='Monthly Sharpe', format="%.2f",),
+        'monthly_sortino' : st.column_config.NumberColumn(label='Monthly Sortino', format="%.2f",),
+        'monthly_mean' : st.column_config.NumberColumn(label='Monthly Mean (ann.)', format="%.2f%%",),
+        'monthly_vol' : st.column_config.NumberColumn(label='Monthly Vol (ann.)', format="%.2f%%",),
+        'monthly_skew' : st.column_config.NumberColumn(label='Monthly Skew', format="%.2f",),
+        'monthly_kurt' : st.column_config.NumberColumn(label='Monthly Kurt', format="%.2f",),
+        'best_month' : st.column_config.NumberColumn(label='Best Month', format="%.2f%%",),
+        'worst_month' : st.column_config.NumberColumn(label='Worst Month', format="%.2f%%",),
+        'yearly_sharpe' : st.column_config.NumberColumn(label='Yearly Sharpe', format="%.2f",),
+        'yearly_sortino' : st.column_config.NumberColumn(label='Yearly Sortino', format="%.2f",),
+        'yearly_mean' : st.column_config.NumberColumn(label='Yearly Mean (ann.)', format="%.2f%%",),
+        'yearly_vol' : st.column_config.NumberColumn(label='Yearly Vol (ann.)', format="%.2f%%",),
+        'yearly_skew' : st.column_config.NumberColumn(label='Yearly Skew', format="%.2f",),
+        'yearly_kurt' : st.column_config.NumberColumn(label='Yearly Kurt', format="%.2f",),
+        'best_year' : st.column_config.NumberColumn(label='Best Yearly', format="%.2f%%",),
+        'worst_year' : st.column_config.NumberColumn(label='Worst Yearly', format="%.2f%%",),
+        'avg_drawdown' : st.column_config.NumberColumn(label='Avg. Drawdown', format="%.2f%%",),
+        'avg_drawdown_days' : st.column_config.NumberColumn(label='Avg. Drawdown Days', format="%.2f",),
+        'avg_up_month' : st.column_config.NumberColumn(label='Avg. Up Month', format="%.2f%%",),
+        'avg_down_month' : st.column_config.NumberColumn(label='Avg. Down Month', format="%.2f%%",),
+        'win_year_perc' : st.column_config.NumberColumn(label='Win Year % ', format="%.2f%%",),
+        'twelve_month_win_perc' : st.column_config.NumberColumn(label='Win 12m %', format="%.2f%%",),
+      }
+      st.dataframe(data=stats_data,
+                   column_config=stats_config, )
+
+      price_data = result.prices.copy()
+      price_data.drop(price_data.columns[len(price_data.columns)-1], axis=1, inplace=True)
+      st.line_chart(data=price_data)
+      print(result.prices)
   else:
     st.error("No holding is selected")
