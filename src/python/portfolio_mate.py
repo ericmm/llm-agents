@@ -89,6 +89,8 @@ def remove_uncheked_holdings(edited_data: pd.DataFrame):
   new_data = new_data.drop('checked', axis=1)
   new_data.reset_index()
   st.session_state.holdings = new_data
+  st.session_state.enriched = False
+  st.session_state.result = None
 
 
 def calc_weight_by_market_cap(selected_df: pd.DataFrame):
@@ -103,15 +105,13 @@ def calc_weight_by_market_cap(selected_df: pd.DataFrame):
   return weights
 
 
-def build_benchmark_test():
+def build_benchmark_test(start_date: str):
   s = bt.Strategy(f'Benchmark: {st.session_state.benchmark_ticker}',
-                  # [bt.algos.RunOnce(),
-                  [bt.algos.RunMonthly(),
+                  [bt.algos.RunOnce(),
                    bt.algos.SelectAll(),
                    bt.algos.WeighEqually(), # only one ticker, so it's 100%
                    bt.algos.Rebalance()])
-  data = bt.get(st.session_state.benchmark_ticker,
-                start=st.session_state.start_date)
+  data = bt.get(st.session_state.benchmark_ticker, start=start_date)
   return bt.Backtest(s, data)
 
 
@@ -154,11 +154,12 @@ def build_back_test(selected_df: pd.DataFrame, data: pd.DataFrame, strategies: l
     tests.append(test)
 
   # add benchmark test
-  tests.append(build_benchmark_test())
+  tests.append(build_benchmark_test(data.index[0]))
   return tests
 
 
 def download_history_data(selected_df: pd.DataFrame):
+  print('Downloading historical data...')
   symbol_list = selected_df['symbol'].to_list()
   if st.session_state.benchmark_ticker not in symbol_list:
     symbol_list.append(st.session_state.benchmark_ticker)
@@ -196,6 +197,7 @@ def enrich_holdings(selected_holdings):
   for symbol_batch in symbol_batch_list:
     batch_tickers = ' '.join(symbol_batch)
     # batch fetch stock basic info from Yahoo Finance
+    print(f'enrich holdings: {batch_tickers}')
     tickers = yf.Tickers(batch_tickers)
     for symbol in symbol_batch:
       info = tickers.tickers[symbol].info
@@ -345,12 +347,7 @@ if (st.session_state.get('page_state','') == 'NEXT_STEP'
         'win_year_perc' : st.column_config.NumberColumn(label='Win Year % ', format="%.2f%%",),
         'twelve_month_win_perc' : st.column_config.NumberColumn(label='Win 12m %', format="%.2f%%",),
       }
-      st.dataframe(data=stats_data,
-                   column_config=stats_config, )
-
-      price_data = result.prices.copy()
-      price_data.drop(price_data.columns[len(price_data.columns)-1], axis=1, inplace=True)
-      st.line_chart(data=price_data)
-      print(result.prices)
+      st.dataframe(data=stats_data, column_config=stats_config, )
+      st.line_chart(data=result.prices)
   else:
     st.error("No holding is selected")
