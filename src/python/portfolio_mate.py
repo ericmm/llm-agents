@@ -1,5 +1,6 @@
 import bt
 import datetime
+import numpy as np
 import pandas as pd
 import streamlit as st
 import time
@@ -22,6 +23,13 @@ def do_fetch_fake_holdings(ticker: str) ->  pd.DataFrame:
 
 
 def on_fetch_holdings(ticker: str, start_date: str):
+  # csv upload
+  if st.session_state.get('holdings', None) is not None:
+    st.session_state.page_state = 'DATA_FETCHED'
+    st.session_state.start_date = (start_date or datetime.date(2014, 1, 1)).strftime("%Y-%m-%d")
+    st.session_state.enriched = False
+    return
+
   if len(ticker.strip()) == 0:
     st.error("You haven't specify a fund ticker yet")
   else:
@@ -32,7 +40,7 @@ def on_fetch_holdings(ticker: str, start_date: str):
         data = do_fetch_holdings(ticker)
     st.session_state.page_state = 'DATA_FETCHED'
     st.session_state.holdings = data
-    st.session_state.ticker = ticker.strip().upper()
+    st.session_state.enriched = False
     st.session_state.start_date = (start_date or datetime.date(2014, 1, 1)).strftime("%Y-%m-%d")
 
 
@@ -85,6 +93,8 @@ def remove_uncheked_holdings(edited_data: pd.DataFrame):
   # removing rows which have empty symbol
   removed_index_list = new_data[(new_data['symbol'] == '')].index.tolist()
   new_data = new_data.drop(index=removed_index_list)
+  # uppercase the symbol
+  new_data['symbol'] = new_data['symbol'].str.upper()
   # drop the 'checked' column
   new_data = new_data.drop('checked', axis=1)
   new_data.reset_index()
@@ -186,10 +196,12 @@ def calc_returns(selected_df: pd.DataFrame, strategies: list[str], benchmark_tic
 
 
 def enrich_holdings(selected_holdings):
-  symbol_list = selected_holdings['symbol'].to_list()
+  symbol_list = selected_holdings['symbol'].str.upper().to_list()
   batch_size = 10
   symbol_batch_list = [symbol_list[i:i + batch_size] for i in range(0, len(symbol_list), batch_size)]
 
+  name_col = []
+  shares_col = []
   country_col = []
   industry_col = []
   sector_col = []
@@ -201,21 +213,29 @@ def enrich_holdings(selected_holdings):
     tickers = yf.Tickers(batch_tickers)
     for symbol in symbol_batch:
       info = tickers.tickers[symbol].info
+      data_row = selected_holdings.loc[selected_holdings['symbol'] == symbol]
       if info is not None:
         country_col.append(info['country'])
         industry_col.append(info['industry'])
         sector_col.append(info['sector'])
         market_cap_col.append(info['marketCap'])
+        name_col.append(info['shortName'])
+        if data_row['shares'] is not None:
+          shares_col.append(np.float64(data_row['shares']))
       else:
         country_col.append(None)
         industry_col.append(None)
         sector_col.append(None)
         market_cap_col.append(None)
+        name_col.append(None)
+        shares_col.append(None)
 
   selected_holdings['country'] = country_col
   selected_holdings['industry'] = industry_col
   selected_holdings['sector'] = sector_col
   selected_holdings['marketCap'] = market_cap_col
+  selected_holdings['name'] = name_col
+  selected_holdings['shares'] = shares_col
 
 
 # Main page start here
@@ -236,6 +256,28 @@ with cols[1]:
 
 st.button("Fetch", on_click=on_fetch_holdings, args=(ticker, date))
 
+uploaded_file = st.file_uploader("Or upload a CSV file with 'symbol,weight' header")
+if uploaded_file is not None:
+  uploaded_df = pd.read_csv(uploaded_file)
+  # adding missing columns with default values
+  uploaded_df['checked'] = True
+  uploaded_df['name'] = uploaded_df['symbol']
+  uploaded_df['shares'] = 1
+  # re-order the columns
+  uploaded_df = uploaded_df[['checked', 'name', 'symbol', 'shares', 'weight']]
+
+  st.session_state.holdings = uploaded_df
+  st.session_state.csv_uploaded = True
+  st.session_state.enriched = False
+  st.session_state.page_state = 'DATA_FETCHED'
+else:
+  if st.session_state.get('csv_uploaded', False) is True:
+    # user deleted csv file
+    st.session_state.holdings = None
+    st.session_state.csv_uploaded = False
+    st.session_state.enriched = False
+
+
 print(st.session_state.get('page_state',''))
 
 if st.session_state.get('page_state','') == 'DATA_FETCHED':
@@ -251,12 +293,13 @@ if st.session_state.get('page_state','') == 'DATA_FETCHED':
     edited_df = st.data_editor(data=fund_holdings,
                                hide_index = False,
                                column_config = config,
-                               disabled=('name','symbol'),
+                               disabled=('name',),
                                num_rows='dynamic')
+    st.text("Tips: You can add new rows (symbol, weight) or edit weights by double click cells. \n     Remember to check the newly added rows.")
 
     st.button("Next Step", on_click=remove_uncheked_holdings, args=(edited_df,))
   else:
-    st.error("Fetch data failed")
+    st.error("Please use a fetch Fund or upload a CSV file")
 
 if (st.session_state.get('page_state','') == 'NEXT_STEP'
     or st.session_state.get('page_state','') == 'CALC_RETURNS'):
@@ -278,6 +321,7 @@ if (st.session_state.get('page_state','') == 'NEXT_STEP'
     }
     selected_df = st.data_editor(data=selected_holdings,
                                  hide_index = True,
+                                 disabled=('name','symbol'),
                                  column_config = config,)
     selected_df.reset_index(inplace=True)
     # drop the old 'index' column
