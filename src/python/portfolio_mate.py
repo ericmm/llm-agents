@@ -328,7 +328,8 @@ else:
     st.session_state.holdings = None
     st.session_state.csv_uploaded = False
     st.session_state.enriched = False
-
+st.text("")
+st.text("")
 
 print(st.session_state.get('page_state',''))
 
@@ -347,9 +348,19 @@ if st.session_state.get('page_state','') == 'DATA_FETCHED':
                                column_config = config,
                                disabled=('name',),
                                num_rows='dynamic')
+    st.session_state.total_weight = edited_df['weight'].sum()
     st.text("Tips: You can add new rows (symbol, weight) or edit weights by double click cells. \n     Remember to check the newly added rows.")
+    st.text("")
 
-    st.button("Next Step", on_click=remove_uncheked_holdings, args=(edited_df,))
+    amt_cols=st.columns(2)
+    with amt_cols[0]:
+      amount = st.number_input("Amount to Invest", min_value=1.00, max_value=999999999.00, step=10000.00, value=10000.00, format="%.2f")
+      st.session_state.amount = amount
+    with amt_cols[1]:
+      st.number_input("Total weights", value=st.session_state.total_weight, disabled=True, format="%.6f")
+    st.text("")
+
+    st.button("Next Step", on_click=remove_uncheked_holdings, args=(edited_df))
   else:
     st.error("No holding is selected, please click 'Fetch' button or upload a CSV file")
 
