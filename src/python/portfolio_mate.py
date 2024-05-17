@@ -1,5 +1,6 @@
 import bt
 import datetime
+import ffn
 import numpy as np
 import pandas as pd
 import streamlit as st
@@ -215,11 +216,14 @@ def enrich_holdings(selected_holdings):
   industry_col = []
   sector_col = []
   market_cap_col = []
+  return_col = []
   for symbol_batch in symbol_batch_list:
     batch_tickers = ' '.join(symbol_batch)
+    ffn_batch_tickers = ','.join(symbol_batch).lower()
     # batch fetch stock basic info from Yahoo Finance
     print(f'enrich holdings: {batch_tickers}')
     tickers = yf.Tickers(batch_tickers)
+    batch_stats = ffn.get(ffn_batch_tickers, start=st.session_state.start_date).calc_stats()
     for symbol in symbol_batch:
       info = tickers.tickers[symbol].info
       if info is not None:
@@ -229,6 +233,11 @@ def enrich_holdings(selected_holdings):
         market_cap_col.append(info['marketCap'])
         name_col.append(info['shortName'])
         shares_col.append(np.float64(1))
+        stats = batch_stats.get(symbol.lower(), None)
+        if stats is not None and stats.lookback_returns is not None:
+          return_col.append(f'{stats.lookback_returns["incep"]:.2%}')
+        else:
+          return_col.append(None)
       else:
         country_col.append(None)
         industry_col.append(None)
@@ -236,6 +245,7 @@ def enrich_holdings(selected_holdings):
         market_cap_col.append(None)
         name_col.append(None)
         shares_col.append(None)
+        return_col.append(None)
 
   selected_holdings['country'] = country_col
   selected_holdings['industry'] = industry_col
@@ -243,6 +253,7 @@ def enrich_holdings(selected_holdings):
   selected_holdings['marketCap'] = market_cap_col
   selected_holdings['name'] = name_col
   selected_holdings['shares'] = shares_col
+  selected_holdings['returns'] = return_col
 
 
 # Main page start here
@@ -328,6 +339,7 @@ if (st.session_state.get('page_state','') == 'NEXT_STEP'
       'industry' : st.column_config.TextColumn(label='Industry'),
       'sector' : st.column_config.TextColumn(label='Sector'),
       'marketCap' : st.column_config.NumberColumn(label='MarketCap'),
+      'returns' : st.column_config.TextColumn(label='Returns since ' + st.session_state.start_date),
     }
     selected_df = st.data_editor(data=selected_holdings,
                                  hide_index = True,
@@ -337,13 +349,13 @@ if (st.session_state.get('page_state','') == 'NEXT_STEP'
     # drop the old 'index' column
     selected_df.drop('index', axis=1, inplace=True)
 
-    strategies = st.multiselect("Select one or more strategies", ("Equally Weighted", "MarketCap Weighted", "Using Weights Above"))
-    rebalance_freq = st.selectbox(
-        "Rebalance Frequency",
-        ("Never", "Monthly", "Quarterly", "Annually"),
-        index=3,
-    )
-    benchmark_ticker = st.text_input(label="Benchmark Ticker", placeholder="Please enter a benchmark ticker, e.g. MSFT or SPY")
+    cols2=st.columns(3)
+    with cols2[0]:
+      strategies = st.multiselect("Select one or more strategies", ("Equally Weighted", "MarketCap Weighted", "Using Weights Above"), default=("Equally Weighted", "MarketCap Weighted", "Using Weights Above"))
+    with cols2[1]:
+      rebalance_freq = st.selectbox("Rebalance Frequency", ("Never", "Monthly", "Quarterly", "Annually"), index=3,)
+    with cols2[2]:
+      benchmark_ticker = st.text_input(label="Benchmark Ticker", value="MSFT")
     st.button("Calculate returns", on_click=calc_returns, args=(selected_df,strategies,rebalance_freq,benchmark_ticker))
 
     result = st.session_state.get('result', None)
