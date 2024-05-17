@@ -26,7 +26,6 @@ def on_fetch_holdings(ticker: str, start_date: str):
   # csv upload
   if st.session_state.get('holdings', None) is not None:
     st.session_state.page_state = 'DATA_FETCHED'
-    st.session_state.start_date = (start_date or datetime.date(2014, 1, 1)).strftime("%Y-%m-%d")
     st.session_state.enriched = False
     return
 
@@ -41,7 +40,6 @@ def on_fetch_holdings(ticker: str, start_date: str):
     st.session_state.page_state = 'DATA_FETCHED'
     st.session_state.holdings = data
     st.session_state.enriched = False
-    st.session_state.start_date = (start_date or datetime.date(2014, 1, 1)).strftime("%Y-%m-%d")
 
 
 def do_fetch_holdings(ticker: str) -> pd.DataFrame:
@@ -213,15 +211,13 @@ def enrich_holdings(selected_holdings):
     tickers = yf.Tickers(batch_tickers)
     for symbol in symbol_batch:
       info = tickers.tickers[symbol].info
-      data_row = selected_holdings.loc[selected_holdings['symbol'] == symbol]
       if info is not None:
         country_col.append(info['country'])
         industry_col.append(info['industry'])
         sector_col.append(info['sector'])
         market_cap_col.append(info['marketCap'])
         name_col.append(info['shortName'])
-        if data_row['shares'] is not None:
-          shares_col.append(np.float64(data_row['shares']))
+        shares_col.append(np.float64(1))
       else:
         country_col.append(None)
         industry_col.append(None)
@@ -242,7 +238,7 @@ def enrich_holdings(selected_holdings):
 st.title("Welcome to Portfolio Mate")
 
 use_fake = st.checkbox("Use fake holdings", value=True)
-st.session_state.use_fake = use_fake == True
+st.session_state.use_fake = (use_fake is True)
 
 cols=st.columns(2)
 with cols[0]:
@@ -253,23 +249,26 @@ with cols[1]:
                        min_value=datetime.date(2000, 1, 1),
                        max_value=datetime.date.today(),
                        format="YYYY-MM-DD")
+  st.session_state.start_date = (date or datetime.date(2014, 1, 1)).strftime("%Y-%m-%d")
 
 st.button("Fetch", on_click=on_fetch_holdings, args=(ticker, date))
 
 uploaded_file = st.file_uploader("Or upload a CSV file with 'symbol,weight' header")
 if uploaded_file is not None:
-  uploaded_df = pd.read_csv(uploaded_file)
-  # adding missing columns with default values
-  uploaded_df['checked'] = True
-  uploaded_df['name'] = uploaded_df['symbol']
-  uploaded_df['shares'] = 1
-  # re-order the columns
-  uploaded_df = uploaded_df[['checked', 'name', 'symbol', 'shares', 'weight']]
+  if st.session_state.get('csv_uploaded', False) is False:
+    uploaded_df = pd.read_csv(uploaded_file)
 
-  st.session_state.holdings = uploaded_df
+    # adding missing columns with default values
+    uploaded_df['checked'] = True
+    uploaded_df['name'] = uploaded_df['symbol']
+    uploaded_df['shares'] = 1
+    # re-order the columns
+    uploaded_df = uploaded_df[['checked', 'name', 'symbol', 'shares', 'weight']]
+    st.session_state.holdings = uploaded_df
+
+    st.session_state.page_state = 'DATA_FETCHED'
+    st.session_state.enriched = False
   st.session_state.csv_uploaded = True
-  st.session_state.enriched = False
-  st.session_state.page_state = 'DATA_FETCHED'
 else:
   if st.session_state.get('csv_uploaded', False) is True:
     # user deleted csv file
@@ -299,13 +298,13 @@ if st.session_state.get('page_state','') == 'DATA_FETCHED':
 
     st.button("Next Step", on_click=remove_uncheked_holdings, args=(edited_df,))
   else:
-    st.error("Please use a fetch Fund or upload a CSV file")
+    st.error("No holding is selected, please click 'Fetch' button or upload a CSV file")
 
 if (st.session_state.get('page_state','') == 'NEXT_STEP'
     or st.session_state.get('page_state','') == 'CALC_RETURNS'):
   selected_holdings = st.session_state.holdings
   if selected_holdings is not None:
-    if st.session_state.get('enriched', False) == False:
+    if st.session_state.get('enriched', False) is False:
       enrich_holdings(selected_holdings)
       st.session_state.enriched = True
 
@@ -394,4 +393,4 @@ if (st.session_state.get('page_state','') == 'NEXT_STEP'
       st.dataframe(data=stats_data, column_config=stats_config, )
       st.line_chart(data=result.prices)
   else:
-    st.error("No holding is selected")
+    st.error("No holding is selected, please click 'Fetch' button or upload a CSV file")
