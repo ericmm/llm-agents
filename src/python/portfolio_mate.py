@@ -216,6 +216,10 @@ def enrich_holdings(selected_holdings):
   industry_col = []
   sector_col = []
   market_cap_col = []
+  return_1y_col = []
+  return_3y_col = []
+  return_5y_col = []
+  return_10y_col = []
   return_col = []
   for symbol_batch in symbol_batch_list:
     batch_tickers = ' '.join(symbol_batch)
@@ -234,10 +238,7 @@ def enrich_holdings(selected_holdings):
         name_col.append(info['shortName'])
         shares_col.append(np.float64(1))
         stats = batch_stats.get(symbol.lower(), None)
-        if stats is not None and stats.lookback_returns is not None:
-          return_col.append(f'{stats.lookback_returns["incep"]:.2%}')
-        else:
-          return_col.append(None)
+        populate_returns(stats, return_1y_col, return_3y_col, return_5y_col, return_10y_col, return_col)
       else:
         country_col.append(None)
         industry_col.append(None)
@@ -245,6 +246,10 @@ def enrich_holdings(selected_holdings):
         market_cap_col.append(None)
         name_col.append(None)
         shares_col.append(None)
+        return_1y_col.append(None)
+        return_3y_col.append(None)
+        return_5y_col.append(None)
+        return_10y_col.append(None)
         return_col.append(None)
 
   selected_holdings['country'] = country_col
@@ -253,7 +258,33 @@ def enrich_holdings(selected_holdings):
   selected_holdings['marketCap'] = market_cap_col
   selected_holdings['name'] = name_col
   selected_holdings['shares'] = shares_col
+  selected_holdings['returns_1y'] = return_1y_col
+  selected_holdings['returns_3y'] = return_3y_col
+  selected_holdings['returns_5y'] = return_5y_col
+  selected_holdings['returns_10y'] = return_10y_col
   selected_holdings['returns'] = return_col
+
+
+def populate_returns(stats, return_1y_col, return_3y_col, return_5y_col, return_10y_col, return_col):
+  if stats is not None and stats.lookback_returns is not None:
+    populate_single_return(stats, '1y', return_1y_col)
+    populate_single_return(stats, '3y', return_3y_col)
+    populate_single_return(stats, '5y', return_5y_col)
+    populate_single_return(stats, '10y', return_10y_col)
+    populate_single_return(stats, 'incep', return_col)
+  else:
+    return_1y_col.append(None)
+    return_3y_col.append(None)
+    return_5y_col.append(None)
+    return_10y_col.append(None)
+    return_col.append(None)
+
+
+def populate_single_return(stats, key, col):
+  if stats.lookback_returns[key] is not None:
+    col.append(float(stats.lookback_returns[key]) * 100)
+  else:
+    col.append(None)
 
 
 # Main page start here
@@ -339,7 +370,11 @@ if (st.session_state.get('page_state','') == 'NEXT_STEP'
       'industry' : st.column_config.TextColumn(label='Industry'),
       'sector' : st.column_config.TextColumn(label='Sector'),
       'marketCap' : st.column_config.NumberColumn(label='MarketCap'),
-      'returns' : st.column_config.TextColumn(label='Returns since ' + st.session_state.start_date),
+      'returns_1y' : st.column_config.NumberColumn(label='1Y %', format="%.2f%%",),
+      'returns_3y' : st.column_config.NumberColumn(label='3Y %', format="%.2f%%",),
+      'returns_5y' : st.column_config.NumberColumn(label='5Y %', format="%.2f%%",),
+      'returns_10y' : st.column_config.NumberColumn(label='10Y %', format="%.2f%%",),
+      'returns' : st.column_config.NumberColumn(label='since ' + st.session_state.start_date, format="%.2f%%",),
     }
     selected_df = st.data_editor(data=selected_holdings,
                                  hide_index = True,
