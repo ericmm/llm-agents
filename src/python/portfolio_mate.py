@@ -123,13 +123,13 @@ def build_benchmark_test(start_date: str):
   return bt.Backtest(s, data)
 
 
-def build_back_test(selected_df: pd.DataFrame, data: pd.DataFrame, strategies: list[str]):
+def build_back_test(selected_df: pd.DataFrame, data: pd.DataFrame, strategies: list[str], rebalance_freq: str):
   tests = []
-  run_monthly_algo = bt.algos.RunMonthly()
+
+  run_algo = build_rebalance_freq_algo(rebalance_freq)
   select_all_algo = bt.algos.SelectAll()
   rebalance_algo = bt.algos.Rebalance()
   weighted_algo = None
-  # selectNAlgo = bt.algos.SelectN(2)
   for strategy_name in strategies:
     if strategy_name == "Equally Weighted":
       weighted_algo = bt.algos.WeighEqually()
@@ -151,7 +151,7 @@ def build_back_test(selected_df: pd.DataFrame, data: pd.DataFrame, strategies: l
     strategy = bt.Strategy(
         strategy_name,
         [
-          run_monthly_algo,
+          run_algo,
           select_all_algo,
           weighted_algo,
           rebalance_algo
@@ -166,6 +166,17 @@ def build_back_test(selected_df: pd.DataFrame, data: pd.DataFrame, strategies: l
   return tests
 
 
+def build_rebalance_freq_algo(rebalance_freq):
+  if rebalance_freq == 'Never':
+    return bt.algos.RunOnce()
+  elif rebalance_freq == 'Monthly':
+    return bt.algos.RunMonthly()
+  elif rebalance_freq == 'Quarterly':
+    return bt.algos.RunQuarterly()
+  else:
+    return bt.algos.RunYearly()
+
+
 def download_history_data(selected_df: pd.DataFrame):
   print('Downloading historical data...')
   symbol_list = selected_df['symbol'].to_list()
@@ -175,7 +186,7 @@ def download_history_data(selected_df: pd.DataFrame):
   return bt.get(comma_sep_symbols, start=st.session_state.start_date)
 
 
-def calc_returns(selected_df: pd.DataFrame, strategies: list[str], benchmark_ticker: str):
+def calc_returns(selected_df: pd.DataFrame, strategies: list[str], rebalance_freq: str, benchmark_ticker: str):
   st.session_state.page_state = 'CALC_RETURNS'
   if len(strategies) == 0:
     st.error("Please select at least one strategy.")
@@ -186,7 +197,7 @@ def calc_returns(selected_df: pd.DataFrame, strategies: list[str], benchmark_tic
 
   st.session_state.benchmark_ticker = benchmark_ticker.upper()
   data = download_history_data(selected_df)
-  tests = build_back_test(selected_df, data, strategies)
+  tests = build_back_test(selected_df, data, strategies, rebalance_freq)
 
   # run the back testing and save the result
   st.session_state.result = bt.run(*tests)
@@ -253,7 +264,7 @@ with cols[1]:
 
 st.button("Fetch", on_click=on_fetch_holdings, args=(ticker, date))
 
-uploaded_file = st.file_uploader("Or upload a CSV file with 'symbol,weight' header")
+uploaded_file = st.file_uploader("Or upload a CSV file with 'symbol,weight' (lower case) header")
 if uploaded_file is not None:
   if st.session_state.get('csv_uploaded', False) is False:
     uploaded_df = pd.read_csv(uploaded_file)
@@ -326,9 +337,14 @@ if (st.session_state.get('page_state','') == 'NEXT_STEP'
     # drop the old 'index' column
     selected_df.drop('index', axis=1, inplace=True)
 
-    options = st.multiselect("Select strategy", ("Equally Weighted", "MarketCap Weighted", "Using Weights Above"))
+    strategies = st.multiselect("Select one or more strategies", ("Equally Weighted", "MarketCap Weighted", "Using Weights Above"))
+    rebalance_freq = st.selectbox(
+        "Rebalance Frequency",
+        ("Never", "Monthly", "Quarterly", "Annually"),
+        index=3,
+    )
     benchmark_ticker = st.text_input(label="Benchmark Ticker", placeholder="Please enter a benchmark ticker, e.g. MSFT or SPY")
-    st.button("Calculate returns", on_click=calc_returns, args=(selected_df,options,benchmark_ticker))
+    st.button("Calculate returns", on_click=calc_returns, args=(selected_df,strategies,rebalance_freq,benchmark_ticker))
 
     result = st.session_state.get('result', None)
     if result is not None:
