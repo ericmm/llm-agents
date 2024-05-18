@@ -10,8 +10,12 @@ import yfinance as yf
 from bs4 import BeautifulSoup
 from playwright.sync_api import sync_playwright
 
+STRATEGY_EQUALLY_WEIGHTED = "Equally Weighted"
+STRATEGY_MARKETCAP_WEIGHTED = "MarketCap Weighted"
+STRATEGY_SUPPLIED_WEIGHTS = "Using Weights Above"
 
-def do_fetch_fake_holdings(ticker: str) ->  pd.DataFrame:
+
+def do_fetch_fake_holdings(ticker: str) -> pd.DataFrame:
   # simulate fetch action, for testing only
   print(f'fetch fake data for {ticker}...')
   time.sleep(1)
@@ -23,7 +27,7 @@ def do_fetch_fake_holdings(ticker: str) ->  pd.DataFrame:
   ])
 
 
-def on_fetch_holdings(ticker: str, start_date: str):
+def on_fetch_holdings(ticker: str):
   # csv upload
   if st.session_state.get('holdings', None) is not None:
     st.session_state.page_state = 'DATA_FETCHED'
@@ -74,8 +78,8 @@ def do_fetch_holdings(ticker: str) -> pd.DataFrame:
         # some holdings do not have symbols, e.g. 'US Dollars', etc.
         symbol = soup.a.get_text().replace('N/A', '')
 
-      shares = float(h[2].replace(',',''))
-      weight = float(h[3].replace(',',''))/100
+      shares = float(h[2].replace(',', ''))
+      weight = float(h[3].replace(',', ''))/100
       data.append({"checked": True,"name": name, "symbol": symbol, "shares": shares, "weight": weight})
 
     # Close the browser
@@ -118,7 +122,7 @@ def build_benchmark_test(start_date: str):
   s = bt.Strategy(f'Benchmark: {st.session_state.benchmark_ticker}',
                   [bt.algos.RunOnce(),
                    bt.algos.SelectAll(),
-                   bt.algos.WeighEqually(), # only one ticker, so it's 100%
+                   bt.algos.WeighEqually(),  # only one ticker, so it's 100%
                    bt.algos.Rebalance()])
   data = bt.get(st.session_state.benchmark_ticker, start=start_date)
   return bt.Backtest(s, data)
@@ -132,14 +136,14 @@ def build_back_test(selected_df: pd.DataFrame, data: pd.DataFrame, strategies: l
   rebalance_algo = bt.algos.Rebalance()
   weighted_algo = None
   for strategy_name in strategies:
-    if strategy_name == "Equally Weighted":
+    if strategy_name == STRATEGY_EQUALLY_WEIGHTED:
       weighted_algo = bt.algos.WeighEqually()
 
-    elif strategy_name == "MarketCap Weighted":
+    elif strategy_name == STRATEGY_MARKETCAP_WEIGHTED:
       weights = calc_weight_by_market_cap(selected_df)
       weighted_algo = bt.algos.WeighSpecified(**weights)
 
-    elif strategy_name == "Using Weights Above":
+    elif strategy_name == STRATEGY_SUPPLIED_WEIGHTS:
       weights = {}
       # use weights in dataframe
       symbol_col = selected_df['symbol']
@@ -202,7 +206,6 @@ def calc_returns(selected_df: pd.DataFrame, strategies: list[str], rebalance_fre
 
   # run the back testing and save the result
   st.session_state.result = bt.run(*tests)
-
 
 
 def enrich_holdings(selected_holdings):
@@ -293,9 +296,10 @@ st.title("Welcome to Portfolio Mate")
 use_fake = st.checkbox("Use fake holdings", value=True)
 st.session_state.use_fake = (use_fake is True)
 
-cols=st.columns(2)
+cols = st.columns(2)
 with cols[0]:
-  ticker = st.text_input(label="Fund Ticker", placeholder="Please enter a fund ticker, e.g. SPY")
+  ticker = st.text_input(label="Fund Ticker",
+                         placeholder="Please enter a fund ticker, e.g. SPY")
 with cols[1]:
   date = st.date_input(label="Data since (for getting historical price data)",
                        value=datetime.date(2014, 1, 1),
@@ -304,7 +308,7 @@ with cols[1]:
                        format="YYYY-MM-DD")
   st.session_state.start_date = (date or datetime.date(2014, 1, 1)).strftime("%Y-%m-%d")
 
-st.button("Fetch", on_click=on_fetch_holdings, args=(ticker, date))
+st.button("Fetch", on_click=on_fetch_holdings, args=(ticker,))
 
 uploaded_file = st.file_uploader("Or upload a CSV file with 'symbol,weight' (lower case) header")
 if uploaded_file is not None:
@@ -331,28 +335,28 @@ else:
 st.text("")
 st.text("")
 
-print(st.session_state.get('page_state',''))
+print(st.session_state.get('page_state', ''))
 
-if st.session_state.get('page_state','') == 'DATA_FETCHED':
+if st.session_state.get('page_state', '') == 'DATA_FETCHED':
   fund_holdings = st.session_state.holdings
   if fund_holdings is not None:
     config = {
-      'checked' : st.column_config.CheckboxColumn(label='Checked'),
-      'name' : st.column_config.TextColumn(label='Name'),
-      'symbol' : st.column_config.TextColumn(label='Symbol'),
-      'shares' : st.column_config.NumberColumn(label='Shares'),
-      'weight' : st.column_config.NumberColumn(label='Weight'),
+      'checked': st.column_config.CheckboxColumn(label='Checked'),
+      'name': st.column_config.TextColumn(label='Name'),
+      'symbol': st.column_config.TextColumn(label='Symbol'),
+      'shares': st.column_config.NumberColumn(label='Shares'),
+      'weight': st.column_config.NumberColumn(label='Weight'),
     }
     edited_df = st.data_editor(data=fund_holdings,
-                               hide_index = False,
-                               column_config = config,
+                               hide_index=False,
+                               column_config=config,
                                disabled=('name',),
                                num_rows='dynamic')
     st.session_state.total_weight = edited_df['weight'].sum()
     st.text("Tips: You can add new rows (symbol, weight) or edit weights by double click cells. \n     Remember to check the newly added rows.")
     st.text("")
 
-    amt_cols=st.columns(2)
+    amt_cols = st.columns(2)
     with amt_cols[0]:
       amount = st.number_input("Amount to Invest", min_value=1.00, max_value=999999999.00, step=10000.00, value=10000.00, format="%.2f")
       st.session_state.amount = amount
@@ -360,12 +364,12 @@ if st.session_state.get('page_state','') == 'DATA_FETCHED':
       st.number_input("Total weights", value=st.session_state.total_weight, disabled=True, format="%.6f")
     st.text("")
 
-    st.button("Next Step", on_click=remove_uncheked_holdings, args=(edited_df))
+    st.button("Next Step", on_click=remove_uncheked_holdings, args=(edited_df,))
   else:
-    st.error("No holding is selected, please click 'Fetch' button or upload a CSV file")
+    st.error( "No holding is selected, please click 'Fetch' button or upload a CSV file")
 
-if (st.session_state.get('page_state','') == 'NEXT_STEP'
-    or st.session_state.get('page_state','') == 'CALC_RETURNS'):
+if (st.session_state.get('page_state', '') == 'NEXT_STEP'
+    or st.session_state.get('page_state', '') == 'CALC_RETURNS'):
   selected_holdings = st.session_state.holdings
   if selected_holdings is not None:
     if st.session_state.get('enriched', False) is False:
@@ -373,46 +377,49 @@ if (st.session_state.get('page_state','') == 'NEXT_STEP'
       st.session_state.enriched = True
 
     config = {
-      'name' : st.column_config.TextColumn(label='Name'),
-      'symbol' : st.column_config.TextColumn(label='Symbol'),
-      'shares' : st.column_config.NumberColumn(label='Shares'),
-      'weight' : st.column_config.NumberColumn(label='Weight'),
-      'country' : st.column_config.TextColumn(label='Country'),
-      'industry' : st.column_config.TextColumn(label='Industry'),
-      'sector' : st.column_config.TextColumn(label='Sector'),
-      'marketCap' : st.column_config.NumberColumn(label='MarketCap'),
-      'returns_1y' : st.column_config.NumberColumn(label='1Y %', format="%.2f%%",),
-      'returns_3y' : st.column_config.NumberColumn(label='3Y %', format="%.2f%%",),
-      'returns_5y' : st.column_config.NumberColumn(label='5Y %', format="%.2f%%",),
-      'returns_10y' : st.column_config.NumberColumn(label='10Y %', format="%.2f%%",),
-      'returns' : st.column_config.NumberColumn(label='since ' + st.session_state.start_date, format="%.2f%%",),
+      'name': st.column_config.TextColumn(label='Name'),
+      'symbol': st.column_config.TextColumn(label='Symbol'),
+      'shares': st.column_config.NumberColumn(label='Shares'),
+      'weight': st.column_config.NumberColumn(label='Weight'),
+      'country': st.column_config.TextColumn(label='Country'),
+      'industry': st.column_config.TextColumn(label='Industry'),
+      'sector': st.column_config.TextColumn(label='Sector'),
+      'marketCap': st.column_config.NumberColumn(label='MarketCap'),
+      'returns_1y': st.column_config.NumberColumn(label='1Y %', format="%.2f%%"),
+      'returns_3y': st.column_config.NumberColumn(label='3Y %', format="%.2f%%"),
+      'returns_5y': st.column_config.NumberColumn(label='5Y %', format="%.2f%%"),
+      'returns_10y': st.column_config.NumberColumn(label='10Y %', format="%.2f%%"),
+      'returns': st.column_config.NumberColumn(label='since ' + st.session_state.start_date, format="%.2f%%"),
     }
     selected_df = st.data_editor(data=selected_holdings,
-                                 hide_index = True,
-                                 disabled=('name','symbol'),
-                                 column_config = config,)
+                                 hide_index=True,
+                                 disabled=('name', 'symbol'),
+                                 column_config=config, )
     selected_df.reset_index(inplace=True)
     # drop the old 'index' column
     selected_df.drop('index', axis=1, inplace=True)
 
-    cols2=st.columns(3)
+    cols2 = st.columns(3)
     with cols2[0]:
-      strategies = st.multiselect("Select one or more strategies", ("Equally Weighted", "MarketCap Weighted", "Using Weights Above"), default=("Equally Weighted", "MarketCap Weighted", "Using Weights Above"))
+      strategies = st.multiselect("Select one or more strategies", (STRATEGY_EQUALLY_WEIGHTED, STRATEGY_MARKETCAP_WEIGHTED, STRATEGY_SUPPLIED_WEIGHTS), default=(STRATEGY_EQUALLY_WEIGHTED, STRATEGY_MARKETCAP_WEIGHTED, STRATEGY_SUPPLIED_WEIGHTS))
     with cols2[1]:
-      rebalance_freq = st.selectbox("Rebalance Frequency", ("Never", "Monthly", "Quarterly", "Annually"), index=3,)
+      rebalance_freq = st.selectbox("Rebalance Frequency", ("Never", "Monthly", "Quarterly", "Annually"), index=3, )
     with cols2[2]:
       benchmark_ticker = st.text_input(label="Benchmark Ticker", value="MSFT")
-    st.button("Calculate returns", on_click=calc_returns, args=(selected_df,strategies,rebalance_freq,benchmark_ticker))
+    st.button("Calculate returns", on_click=calc_returns, args=(selected_df, strategies, rebalance_freq, benchmark_ticker))
 
     result = st.session_state.get('result', None)
     if result is not None:
       stats_data = result.stats.T.copy()
       percentage_columns = ['rf', 'total_return', 'cagr', 'max_drawdown', 'mtd',
-                            'three_month', 'six_month', 'ytd', 'one_year', 'three_year',
-                            'five_year', 'ten_year', 'incep', 'daily_mean', 'daily_vol',
-                            'best_day', 'worst_day', 'monthly_mean', 'monthly_vol', 'best_month',
-                            'worst_month', 'yearly_mean', 'yearly_vol', 'best_year', 'worst_year',
-                            'avg_drawdown', 'avg_up_month', 'avg_down_month', 'win_year_perc', 'twelve_month_win_perc',]
+                            'three_month', 'six_month', 'ytd', 'one_year',
+                            'three_year', 'five_year', 'ten_year', 'incep',
+                            'daily_mean', 'daily_vol', 'best_day', 'worst_day',
+                            'monthly_mean', 'monthly_vol', 'best_month',
+                            'worst_month', 'yearly_mean', 'yearly_vol',
+                            'best_year', 'worst_year', 'avg_drawdown',
+                            'avg_up_month', 'avg_down_month',
+                            'win_year_perc', 'twelve_month_win_perc', ]
       for col in percentage_columns:
         stats_data[col] = stats_data[col] * 100
 
