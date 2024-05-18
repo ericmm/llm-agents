@@ -1,7 +1,7 @@
 import bt
 import datetime
 import ffn
-import numpy as np
+import math
 import pandas as pd
 import streamlit as st
 import time
@@ -214,7 +214,6 @@ def enrich_holdings(selected_holdings):
   symbol_batch_list = [symbol_list[i:i + batch_size] for i in range(0, len(symbol_list), batch_size)]
 
   name_col = []
-  shares_col = []
   country_col = []
   industry_col = []
   sector_col = []
@@ -239,7 +238,6 @@ def enrich_holdings(selected_holdings):
         sector_col.append(info['sector'])
         market_cap_col.append(info['marketCap'])
         name_col.append(info['shortName'])
-        shares_col.append(np.float64(1))
         stats = batch_stats.get(symbol.lower(), None)
         populate_returns(stats, return_1y_col, return_3y_col, return_5y_col, return_10y_col, return_col)
       else:
@@ -248,19 +246,18 @@ def enrich_holdings(selected_holdings):
         sector_col.append(None)
         market_cap_col.append(None)
         name_col.append(None)
-        shares_col.append(None)
         return_1y_col.append(None)
         return_3y_col.append(None)
         return_5y_col.append(None)
         return_10y_col.append(None)
         return_col.append(None)
 
+  selected_holdings['amount'] = selected_holdings.apply(lambda row: (row['weight']*st.session_state.amount), axis=1)
   selected_holdings['country'] = country_col
   selected_holdings['industry'] = industry_col
   selected_holdings['sector'] = sector_col
   selected_holdings['marketCap'] = market_cap_col
   selected_holdings['name'] = name_col
-  selected_holdings['shares'] = shares_col
   selected_holdings['returns_1y'] = return_1y_col
   selected_holdings['returns_3y'] = return_3y_col
   selected_holdings['returns_5y'] = return_5y_col
@@ -352,7 +349,7 @@ if st.session_state.get('page_state', '') == 'DATA_FETCHED':
                                column_config=config,
                                disabled=('name',),
                                num_rows='dynamic')
-    st.session_state.total_weight = edited_df['weight'].sum()
+    st.session_state.total_weight = edited_df.loc[edited_df['checked'] == True, 'weight'].sum()
     st.text("Tips: You can add new rows (symbol, weight) or edit weights by double click cells. \n     Remember to check the newly added rows.")
     st.text("")
 
@@ -361,7 +358,11 @@ if st.session_state.get('page_state', '') == 'DATA_FETCHED':
       amount = st.number_input("Amount to Invest", min_value=1.00, max_value=999999999.00, step=10000.00, value=10000.00, format="%.2f")
       st.session_state.amount = amount
     with amt_cols[1]:
-      st.number_input("Total weights", value=st.session_state.total_weight, disabled=True, format="%.6f")
+      if math.isclose(st.session_state.total_weight, 1.0):
+        text = "Total weights"
+      else:
+        text = "Total weights❗"
+      st.number_input(text, value=st.session_state.total_weight, disabled=True, format="%.6f")
     st.text("")
 
     st.button("Next Step", on_click=remove_uncheked_holdings, args=(edited_df,))
@@ -376,11 +377,18 @@ if (st.session_state.get('page_state', '') == 'NEXT_STEP'
       enrich_holdings(selected_holdings)
       st.session_state.enriched = True
 
+    amt_cols2 = st.columns(2)
+    with amt_cols2[0]:
+      amount = st.number_input("Amount to Invest", value=st.session_state.amount, format="%.2f", disabled=True)
+    with amt_cols2[1]:
+      st.number_input("Total weights", value=st.session_state.total_weight, disabled=True, format="%.6f")
+
     config = {
       'name': st.column_config.TextColumn(label='Name'),
       'symbol': st.column_config.TextColumn(label='Symbol'),
-      'shares': st.column_config.NumberColumn(label='Shares'),
+      'shares': None,
       'weight': st.column_config.NumberColumn(label='Weight'),
+      'amount': st.column_config.NumberColumn(label='Amount to Inv.', format="$%.2f"),
       'country': st.column_config.TextColumn(label='Country'),
       'industry': st.column_config.TextColumn(label='Industry'),
       'sector': st.column_config.TextColumn(label='Sector'),
@@ -391,6 +399,7 @@ if (st.session_state.get('page_state', '') == 'NEXT_STEP'
       'returns_10y': st.column_config.NumberColumn(label='10Y %', format="%.2f%%"),
       'returns': st.column_config.NumberColumn(label='since ' + st.session_state.start_date, format="%.2f%%"),
     }
+
     selected_df = st.data_editor(data=selected_holdings,
                                  hide_index=True,
                                  disabled=('name', 'symbol'),
@@ -411,15 +420,11 @@ if (st.session_state.get('page_state', '') == 'NEXT_STEP'
     result = st.session_state.get('result', None)
     if result is not None:
       stats_data = result.stats.T.copy()
-      percentage_columns = ['rf', 'total_return', 'cagr', 'max_drawdown', 'mtd',
-                            'three_month', 'six_month', 'ytd', 'one_year',
-                            'three_year', 'five_year', 'ten_year', 'incep',
-                            'daily_mean', 'daily_vol', 'best_day', 'worst_day',
-                            'monthly_mean', 'monthly_vol', 'best_month',
-                            'worst_month', 'yearly_mean', 'yearly_vol',
-                            'best_year', 'worst_year', 'avg_drawdown',
-                            'avg_up_month', 'avg_down_month',
-                            'win_year_perc', 'twelve_month_win_perc', ]
+      columns_to_keep = ['start', 'end', 'rf', 'cagr', 'max_drawdown', 'one_year', 'three_year','five_year','ten_year', 'incep', 'total_return']
+      stats_data = stats_data[columns_to_keep]
+      stats_data['total_return_amt'] = stats_data.apply(lambda row: (row['total_return']*st.session_state.amount), axis=1)
+      percentage_columns = ['rf', 'total_return', 'cagr', 'max_drawdown', 'one_year',
+                            'three_year', 'five_year', 'ten_year', 'incep' ]
       for col in percentage_columns:
         stats_data[col] = stats_data[col] * 100
 
@@ -427,49 +432,16 @@ if (st.session_state.get('page_state', '') == 'NEXT_STEP'
         'start' : st.column_config.DateColumn(label='Start', format="YYYY-MM-DD",),
         'end' : st.column_config.DateColumn(label='End', format="YYYY-MM-DD",),
         'rf' : st.column_config.NumberColumn(label='Risk-free rate', format="%.2f%%",),
-        'total_return' : st.column_config.NumberColumn(label='Total Return', format="%.2f%%",),
+        'total_return' : st.column_config.NumberColumn(label='Total Return %', format="%.2f%%",),
+        'total_return_amt' : st.column_config.NumberColumn(label='Total Return $', format="$%.2f",),
         'cagr' : st.column_config.NumberColumn(label='CAGR', format="%.2f%%",),
         'max_drawdown' : st.column_config.NumberColumn(label='Max Drawdown', format="%.2f%%",),
         'calmar' : st.column_config.NumberColumn(label='Calmar Ratio', format="%.2f",),
-        'mtd' : st.column_config.NumberColumn(label='MTD', format="%.2f%%",),
-        'three_month' : st.column_config.NumberColumn(label='3m', format="%.2f%%",),
-        'six_month' : st.column_config.NumberColumn(label='6m', format="%.2f%%",),
-        'ytd' : st.column_config.NumberColumn(label='YTD', format="%.2f%%",),
         'one_year' : st.column_config.NumberColumn(label='1y', format="%.2f%%",),
         'three_year' : st.column_config.NumberColumn(label='3Y (ann.)', format="%.2f%%",),
         'five_year' : st.column_config.NumberColumn(label='5Y (ann.)', format="%.2f%%",),
         'ten_year' : st.column_config.NumberColumn(label='10Y (ann.)', format="%.2f%%",),
         'incep' : st.column_config.NumberColumn(label='Since Incep. (ann.)', format="%.2f%%",),
-        'daily_sharpe' : st.column_config.NumberColumn(label='Daily Sharpe', format="%.2f",),
-        'daily_sortino' : st.column_config.NumberColumn(label='Daily Sortino', format="%.2f",),
-        'daily_mean' : st.column_config.NumberColumn(label='Daily Mean (ann.)', format="%.2f%%",),
-        'daily_vol' : st.column_config.NumberColumn(label='Daily Vol (ann.)', format="%.2f%%",),
-        'daily_skew' : st.column_config.NumberColumn(label='Daily Skew', format="%.2f",),
-        'daily_kurt' : st.column_config.NumberColumn(label='Daily Kurt', format="%.2f",),
-        'best_day' : st.column_config.NumberColumn(label='Best Day', format="%.2f%%",),
-        'worst_day' : st.column_config.NumberColumn(label='Worst Day', format="%.2f%%",),
-        'monthly_sharpe' : st.column_config.NumberColumn(label='Monthly Sharpe', format="%.2f",),
-        'monthly_sortino' : st.column_config.NumberColumn(label='Monthly Sortino', format="%.2f",),
-        'monthly_mean' : st.column_config.NumberColumn(label='Monthly Mean (ann.)', format="%.2f%%",),
-        'monthly_vol' : st.column_config.NumberColumn(label='Monthly Vol (ann.)', format="%.2f%%",),
-        'monthly_skew' : st.column_config.NumberColumn(label='Monthly Skew', format="%.2f",),
-        'monthly_kurt' : st.column_config.NumberColumn(label='Monthly Kurt', format="%.2f",),
-        'best_month' : st.column_config.NumberColumn(label='Best Month', format="%.2f%%",),
-        'worst_month' : st.column_config.NumberColumn(label='Worst Month', format="%.2f%%",),
-        'yearly_sharpe' : st.column_config.NumberColumn(label='Yearly Sharpe', format="%.2f",),
-        'yearly_sortino' : st.column_config.NumberColumn(label='Yearly Sortino', format="%.2f",),
-        'yearly_mean' : st.column_config.NumberColumn(label='Yearly Mean (ann.)', format="%.2f%%",),
-        'yearly_vol' : st.column_config.NumberColumn(label='Yearly Vol (ann.)', format="%.2f%%",),
-        'yearly_skew' : st.column_config.NumberColumn(label='Yearly Skew', format="%.2f",),
-        'yearly_kurt' : st.column_config.NumberColumn(label='Yearly Kurt', format="%.2f",),
-        'best_year' : st.column_config.NumberColumn(label='Best Yearly', format="%.2f%%",),
-        'worst_year' : st.column_config.NumberColumn(label='Worst Yearly', format="%.2f%%",),
-        'avg_drawdown' : st.column_config.NumberColumn(label='Avg. Drawdown', format="%.2f%%",),
-        'avg_drawdown_days' : st.column_config.NumberColumn(label='Avg. Drawdown Days', format="%.2f",),
-        'avg_up_month' : st.column_config.NumberColumn(label='Avg. Up Month', format="%.2f%%",),
-        'avg_down_month' : st.column_config.NumberColumn(label='Avg. Down Month', format="%.2f%%",),
-        'win_year_perc' : st.column_config.NumberColumn(label='Win Year % ', format="%.2f%%",),
-        'twelve_month_win_perc' : st.column_config.NumberColumn(label='Win 12m %', format="%.2f%%",),
       }
       st.dataframe(data=stats_data, column_config=stats_config, )
       st.line_chart(data=result.prices)
