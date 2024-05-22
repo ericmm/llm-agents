@@ -1,5 +1,5 @@
 import bt
-import datetime
+from datetime import datetime, timezone, date
 import ffn
 import math
 import pandas as pd
@@ -218,6 +218,7 @@ def enrich_holdings(selected_holdings):
   industry_col = []
   sector_col = []
   market_cap_col = []
+  first_trade_date_col = []
   return_1y_col = []
   return_3y_col = []
   return_5y_col = []
@@ -238,6 +239,7 @@ def enrich_holdings(selected_holdings):
         sector_col.append(info['sector'])
         market_cap_col.append(info['marketCap'])
         name_col.append(info['shortName'])
+        first_trade_date_col.append(datetime.fromtimestamp(info['firstTradeDateEpochUtc'], timezone.utc).strftime('%Y-%m-%d'))
         stats = batch_stats.get(symbol.lower(), None)
         populate_returns(stats, return_1y_col, return_3y_col, return_5y_col, return_10y_col, return_col)
       else:
@@ -246,6 +248,7 @@ def enrich_holdings(selected_holdings):
         sector_col.append(None)
         market_cap_col.append(None)
         name_col.append(None)
+        first_trade_date_col.append(None)
         return_1y_col.append(None)
         return_3y_col.append(None)
         return_5y_col.append(None)
@@ -258,6 +261,7 @@ def enrich_holdings(selected_holdings):
   selected_holdings['sector'] = sector_col
   selected_holdings['marketCap'] = market_cap_col
   selected_holdings['name'] = name_col
+  selected_holdings['first_trade_date'] = first_trade_date_col
   selected_holdings['returns_1y'] = return_1y_col
   selected_holdings['returns_3y'] = return_3y_col
   selected_holdings['returns_5y'] = return_5y_col
@@ -298,12 +302,12 @@ with cols[0]:
   ticker = st.text_input(label="Fund Ticker",
                          placeholder="Please enter a fund ticker, e.g. SPY")
 with cols[1]:
-  date = st.date_input(label="Data since (for getting historical price data)",
-                       value=datetime.date(2014, 1, 1),
-                       min_value=datetime.date(2000, 1, 1),
-                       max_value=datetime.date.today(),
+  input_date = st.date_input(label="Data since (for getting historical price data)",
+                       value=date(2014, 1, 1),
+                       min_value=date(2000, 1, 1),
+                       max_value=date.today(),
                        format="YYYY-MM-DD")
-  st.session_state.start_date = (date or datetime.date(2014, 1, 1)).strftime("%Y-%m-%d")
+  st.session_state.start_date = (input_date or date(2014, 1, 1)).strftime("%Y-%m-%d")
 
 st.button("Fetch", on_click=on_fetch_holdings, args=(ticker,))
 
@@ -316,7 +320,7 @@ if uploaded_file is not None:
     uploaded_df['checked'] = True
     uploaded_df['name'] = uploaded_df['symbol']
     uploaded_df['shares'] = 1
-    uploaded_df['weight'] = uploaded_df['weight'] / 100
+    uploaded_df['weight'] = uploaded_df['weight%'] / 100
     # re-order the columns
     uploaded_df = uploaded_df[['checked', 'name', 'symbol', 'shares', 'weight']]
     st.session_state.holdings = uploaded_df
@@ -394,6 +398,7 @@ if (st.session_state.get('page_state', '') == 'NEXT_STEP'
       'industry': st.column_config.TextColumn(label='Industry'),
       'sector': st.column_config.TextColumn(label='Sector'),
       'marketCap': st.column_config.NumberColumn(label='MarketCap'),
+      'first_trade_date': st.column_config.TextColumn(label='First Trade Date'),
       'returns_1y': st.column_config.NumberColumn(label='1Y (%)', format="%.2f%%"),
       'returns_3y': st.column_config.NumberColumn(label='3Y (%)', format="%.2f%%"),
       'returns_5y': st.column_config.NumberColumn(label='5Y (%)', format="%.2f%%"),
