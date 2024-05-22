@@ -316,6 +316,7 @@ if uploaded_file is not None:
     uploaded_df['checked'] = True
     uploaded_df['name'] = uploaded_df['symbol']
     uploaded_df['shares'] = 1
+    uploaded_df['weight'] = uploaded_df['weight'] / 100
     # re-order the columns
     uploaded_df = uploaded_df[['checked', 'name', 'symbol', 'shares', 'weight']]
     st.session_state.holdings = uploaded_df
@@ -359,9 +360,9 @@ if st.session_state.get('page_state', '') == 'DATA_FETCHED':
       st.session_state.amount = amount
     with amt_cols[1]:
       if math.isclose(st.session_state.total_weight, 1.0):
-        text = "Total weights"
+        text = "Total weights (100%)"
       else:
-        text = "Total weights❗"
+        text = "Total weights (not 100%)❗"
       st.number_input(text, value=st.session_state.total_weight, disabled=True, format="%.6f")
     st.text("")
 
@@ -393,10 +394,10 @@ if (st.session_state.get('page_state', '') == 'NEXT_STEP'
       'industry': st.column_config.TextColumn(label='Industry'),
       'sector': st.column_config.TextColumn(label='Sector'),
       'marketCap': st.column_config.NumberColumn(label='MarketCap'),
-      'returns_1y': st.column_config.NumberColumn(label='1Y %', format="%.2f%%"),
-      'returns_3y': st.column_config.NumberColumn(label='3Y %', format="%.2f%%"),
-      'returns_5y': st.column_config.NumberColumn(label='5Y %', format="%.2f%%"),
-      'returns_10y': st.column_config.NumberColumn(label='10Y %', format="%.2f%%"),
+      'returns_1y': st.column_config.NumberColumn(label='1Y (%)', format="%.2f%%"),
+      'returns_3y': st.column_config.NumberColumn(label='3Y (%)', format="%.2f%%"),
+      'returns_5y': st.column_config.NumberColumn(label='5Y (%)', format="%.2f%%"),
+      'returns_10y': st.column_config.NumberColumn(label='10Y (%)', format="%.2f%%"),
       'returns': st.column_config.NumberColumn(label='since ' + st.session_state.start_date, format="%.2f%%"),
     }
 
@@ -437,7 +438,7 @@ if (st.session_state.get('page_state', '') == 'NEXT_STEP'
         'cagr' : st.column_config.NumberColumn(label='CAGR', format="%.2f%%",),
         'max_drawdown' : st.column_config.NumberColumn(label='Max Drawdown', format="%.2f%%",),
         'calmar' : st.column_config.NumberColumn(label='Calmar Ratio', format="%.2f",),
-        'one_year' : st.column_config.NumberColumn(label='1y', format="%.2f%%",),
+        'one_year' : st.column_config.NumberColumn(label='1Y', format="%.2f%%",),
         'three_year' : st.column_config.NumberColumn(label='3Y (ann.)', format="%.2f%%",),
         'five_year' : st.column_config.NumberColumn(label='5Y (ann.)', format="%.2f%%",),
         'ten_year' : st.column_config.NumberColumn(label='10Y (ann.)', format="%.2f%%",),
