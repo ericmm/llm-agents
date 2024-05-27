@@ -230,7 +230,11 @@ def enrich_holdings(selected_holdings):
     # batch fetch stock basic info from Yahoo Finance
     print(f'enrich holdings: {batch_tickers}')
     tickers = yf.Tickers(batch_tickers)
-    batch_stats = ffn.get(ffn_batch_tickers, start=st.session_state.start_date).calc_stats()
+    print('got batch from Yahoo Finance, trying to get historical data')
+    ffn_data = ffn.get(ffn_batch_tickers, start=st.session_state.start_date)
+    print('got historical data')
+    batch_stats = ffn_data.calc_stats()
+    print('calculated batch stats')
     for symbol in symbol_batch:
       info = tickers.tickers[symbol].info
       if info is not None:
@@ -311,7 +315,7 @@ with cols[1]:
 
 st.button("Fetch", on_click=on_fetch_holdings, args=(ticker,))
 
-uploaded_file = st.file_uploader("Or upload a CSV file with 'symbol,weight' (lower case) header")
+uploaded_file = st.file_uploader("Or upload a CSV file with 'symbol,weight%' (lower case) header")
 if uploaded_file is not None:
   if st.session_state.get('csv_uploaded', False) is False:
     uploaded_df = pd.read_csv(uploaded_file)
