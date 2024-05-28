@@ -182,13 +182,13 @@ def build_rebalance_freq_algo(rebalance_freq):
     return bt.algos.RunYearly()
 
 
-def download_history_data(selected_df: pd.DataFrame):
-  print('Downloading historical data...')
-  symbol_list = selected_df['symbol'].to_list()
-  if st.session_state.benchmark_ticker not in symbol_list:
-    symbol_list.append(st.session_state.benchmark_ticker)
-  comma_sep_symbols = ','.join(symbol_list)
-  return bt.get(comma_sep_symbols, start=st.session_state.start_date)
+def download_history_data():
+  print('downloading benchmark historical data...')
+  data = st.session_state.ffn_data.copy()
+  bm_data = bt.get(st.session_state.benchmark_ticker, start=st.session_state.start_date)
+  if bm_data is not None:
+    data = ffn.merge(bm_data, data)
+  return data
 
 
 def calc_returns(selected_df: pd.DataFrame, strategies: list[str], rebalance_freq: str, benchmark_ticker: str):
@@ -201,7 +201,7 @@ def calc_returns(selected_df: pd.DataFrame, strategies: list[str], rebalance_fre
     return
 
   st.session_state.benchmark_ticker = benchmark_ticker.upper()
-  data = download_history_data(selected_df)
+  data = download_history_data()
   tests = build_back_test(selected_df, data, strategies, rebalance_freq)
 
   # run the back testing and save the result
@@ -209,68 +209,74 @@ def calc_returns(selected_df: pd.DataFrame, strategies: list[str], rebalance_fre
 
 
 def enrich_holdings(selected_holdings):
-  symbol_list = selected_holdings['symbol'].str.upper().to_list()
-  batch_size = 10
-  symbol_batch_list = [symbol_list[i:i + batch_size] for i in range(0, len(symbol_list), batch_size)]
+  with st.spinner(f"Download historical data since {st.session_state.start_date}... it may take a few minutes, please kindly be patient."):
+    symbol_list = selected_holdings['symbol'].str.upper().to_list()
+    batch_size = 10
+    symbol_batch_list = [symbol_list[i:i + batch_size] for i in range(0, len(symbol_list), batch_size)]
 
-  name_col = []
-  country_col = []
-  industry_col = []
-  sector_col = []
-  market_cap_col = []
-  first_trade_date_col = []
-  return_1y_col = []
-  return_3y_col = []
-  return_5y_col = []
-  return_10y_col = []
-  return_col = []
-  for symbol_batch in symbol_batch_list:
-    batch_tickers = ' '.join(symbol_batch)
-    ffn_batch_tickers = ','.join(symbol_batch).lower()
+    name_col = []
+    country_col = []
+    industry_col = []
+    sector_col = []
+    market_cap_col = []
+    first_trade_date_col = []
+    return_1y_col = []
+    return_3y_col = []
+    return_5y_col = []
+    return_10y_col = []
+    return_col = []
+
+    # download all historical data for all symbols
+    print('downloading symbol historical data...')
+    ffn_symbol_list = selected_holdings['symbol'].str.lower().to_list()
+    comma_sep_symbols = ','.join(ffn_symbol_list)
+    ffn_data = ffn.get(comma_sep_symbols, start=st.session_state.start_date)
+    st.session_state.ffn_data=ffn_data
+    symbols_stats = ffn_data.calc_stats()
+
     # batch fetch stock basic info from Yahoo Finance
-    print(f'enrich holdings: {batch_tickers}')
-    tickers = yf.Tickers(batch_tickers)
-    print('got batch from Yahoo Finance, trying to get historical data')
-    ffn_data = ffn.get(ffn_batch_tickers, start=st.session_state.start_date)
-    print('got historical data')
-    batch_stats = ffn_data.calc_stats()
-    print('calculated batch stats')
-    for symbol in symbol_batch:
-      info = tickers.tickers[symbol].info
-      if info is not None:
-        country_col.append(info['country'])
-        industry_col.append(info['industry'])
-        sector_col.append(info['sector'])
-        market_cap_col.append(info['marketCap'])
-        name_col.append(info['shortName'])
-        first_trade_date_col.append(datetime.fromtimestamp(info['firstTradeDateEpochUtc'], timezone.utc).strftime('%Y-%m-%d'))
-        stats = batch_stats.get(symbol.lower(), None)
-        populate_returns(stats, return_1y_col, return_3y_col, return_5y_col, return_10y_col, return_col)
-      else:
-        country_col.append(None)
-        industry_col.append(None)
-        sector_col.append(None)
-        market_cap_col.append(None)
-        name_col.append(None)
-        first_trade_date_col.append(None)
-        return_1y_col.append(None)
-        return_3y_col.append(None)
-        return_5y_col.append(None)
-        return_10y_col.append(None)
-        return_col.append(None)
+    for symbol_batch in symbol_batch_list:
+      batch_tickers = ' '.join(symbol_batch)
+      print(f'enriching holdings from Yahoo finance: {batch_tickers}')
+      tickers = yf.Tickers(batch_tickers)
 
-  selected_holdings['amount'] = selected_holdings.apply(lambda row: (row['weight']*st.session_state.amount), axis=1)
-  selected_holdings['country'] = country_col
-  selected_holdings['industry'] = industry_col
-  selected_holdings['sector'] = sector_col
-  selected_holdings['marketCap'] = market_cap_col
-  selected_holdings['name'] = name_col
-  selected_holdings['first_trade_date'] = first_trade_date_col
-  selected_holdings['returns_1y'] = return_1y_col
-  selected_holdings['returns_3y'] = return_3y_col
-  selected_holdings['returns_5y'] = return_5y_col
-  selected_holdings['returns_10y'] = return_10y_col
-  selected_holdings['returns'] = return_col
+      for symbol in symbol_batch:
+        # print(datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+        info = tickers.tickers[symbol].info
+        if info is not None:
+          country_col.append(info['country'])
+          industry_col.append(info['industry'])
+          sector_col.append(info['sector'])
+          market_cap_col.append(info['marketCap'])
+          name_col.append(info['shortName'])
+          first_trade_date_col.append(datetime.fromtimestamp(info['firstTradeDateEpochUtc'], timezone.utc).strftime('%Y-%m-%d'))
+          stats = symbols_stats.get(symbol.lower(), None)
+          populate_returns(stats, return_1y_col, return_3y_col, return_5y_col, return_10y_col, return_col)
+        else:
+          country_col.append(None)
+          industry_col.append(None)
+          sector_col.append(None)
+          market_cap_col.append(None)
+          name_col.append(None)
+          first_trade_date_col.append(None)
+          return_1y_col.append(None)
+          return_3y_col.append(None)
+          return_5y_col.append(None)
+          return_10y_col.append(None)
+          return_col.append(None)
+
+    selected_holdings['amount'] = selected_holdings.apply(lambda row: (row['weight']*st.session_state.amount), axis=1)
+    selected_holdings['country'] = country_col
+    selected_holdings['industry'] = industry_col
+    selected_holdings['sector'] = sector_col
+    selected_holdings['marketCap'] = market_cap_col
+    selected_holdings['name'] = name_col
+    selected_holdings['first_trade_date'] = first_trade_date_col
+    selected_holdings['returns_1y'] = return_1y_col
+    selected_holdings['returns_3y'] = return_3y_col
+    selected_holdings['returns_5y'] = return_5y_col
+    selected_holdings['returns_10y'] = return_10y_col
+    selected_holdings['returns'] = return_col
 
 
 def populate_returns(stats, return_1y_col, return_3y_col, return_5y_col, return_10y_col, return_col):
@@ -307,11 +313,11 @@ with cols[0]:
                          placeholder="Please enter a fund ticker, e.g. SPY")
 with cols[1]:
   input_date = st.date_input(label="Data since (for getting historical price data)",
-                       value=date(2014, 1, 1),
+                       value=date(2015, 1, 1),
                        min_value=date(2000, 1, 1),
                        max_value=date.today(),
                        format="YYYY-MM-DD")
-  st.session_state.start_date = (input_date or date(2014, 1, 1)).strftime("%Y-%m-%d")
+  st.session_state.start_date = (input_date or date(2015, 1, 1)).strftime("%Y-%m-%d")
 
 st.button("Fetch", on_click=on_fetch_holdings, args=(ticker,))
 
@@ -407,7 +413,7 @@ if (st.session_state.get('page_state', '') == 'NEXT_STEP'
       'returns_3y': st.column_config.NumberColumn(label='3Y (%)', format="%.2f%%"),
       'returns_5y': st.column_config.NumberColumn(label='5Y (%)', format="%.2f%%"),
       'returns_10y': st.column_config.NumberColumn(label='10Y (%)', format="%.2f%%"),
-      'returns': st.column_config.NumberColumn(label='since ' + st.session_state.start_date, format="%.2f%%"),
+      'returns': st.column_config.NumberColumn(label='Since ' + st.session_state.start_date, format="%.2f%%"),
     }
 
     selected_df = st.data_editor(data=selected_holdings,
@@ -424,7 +430,7 @@ if (st.session_state.get('page_state', '') == 'NEXT_STEP'
     with cols2[1]:
       rebalance_freq = st.selectbox("Rebalance Frequency", ("Never", "Monthly", "Quarterly", "Annually"), index=3, )
     with cols2[2]:
-      benchmark_ticker = st.text_input(label="Benchmark Ticker", value="MSFT")
+      benchmark_ticker = st.text_input(label="Benchmark Ticker", value="VOO")
     st.button("Calculate returns", on_click=calc_returns, args=(selected_df, strategies, rebalance_freq, benchmark_ticker))
 
     result = st.session_state.get('result', None)
@@ -451,7 +457,7 @@ if (st.session_state.get('page_state', '') == 'NEXT_STEP'
         'three_year' : st.column_config.NumberColumn(label='3Y (ann.)', format="%.2f%%",),
         'five_year' : st.column_config.NumberColumn(label='5Y (ann.)', format="%.2f%%",),
         'ten_year' : st.column_config.NumberColumn(label='10Y (ann.)', format="%.2f%%",),
-        'incep' : st.column_config.NumberColumn(label='Since Incep. (ann.)', format="%.2f%%",),
+        'incep' : st.column_config.NumberColumn(label='Since ' + st.session_state.start_date, format="%.2f%%",),
       }
       st.dataframe(data=stats_data, column_config=stats_config, )
       st.line_chart(data=result.prices)
