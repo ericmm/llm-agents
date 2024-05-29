@@ -6,7 +6,7 @@ import pandas as pd
 import streamlit as st
 import time
 import yfinance as yf
-# from st_aggrid import AgGrid
+#from st_aggrid import AgGrid
 from bs4 import BeautifulSoup
 from playwright.sync_api import sync_playwright
 
@@ -184,10 +184,11 @@ def build_rebalance_freq_algo(rebalance_freq):
 
 def download_history_data():
   print('downloading benchmark historical data...')
-  data = st.session_state.ffn_data.copy()
-  bm_data = bt.get(st.session_state.benchmark_ticker, start=st.session_state.start_date)
+  data = st.session_state.all_historical_data
+  bm_data = bt.get(st.session_state.benchmark_ticker.lower(), start=st.session_state.start_date)
   if bm_data is not None:
     data = ffn.merge(bm_data, data)
+    data = data.dropna()
   return data
 
 
@@ -209,74 +210,75 @@ def calc_returns(selected_df: pd.DataFrame, strategies: list[str], rebalance_fre
 
 
 def enrich_holdings(selected_holdings):
-  with st.spinner(f"Download historical data since {st.session_state.start_date}... it may take a few minutes, please kindly be patient."):
-    symbol_list = selected_holdings['symbol'].str.upper().to_list()
-    batch_size = 10
-    symbol_batch_list = [symbol_list[i:i + batch_size] for i in range(0, len(symbol_list), batch_size)]
+  symbol_list = selected_holdings['symbol'].str.upper().to_list()
+  batch_size = 10
+  symbol_batch_list = [symbol_list[i:i + batch_size] for i in range(0, len(symbol_list), batch_size)]
 
-    name_col = []
-    country_col = []
-    industry_col = []
-    sector_col = []
-    market_cap_col = []
-    first_trade_date_col = []
-    return_1y_col = []
-    return_3y_col = []
-    return_5y_col = []
-    return_10y_col = []
-    return_col = []
+  name_col = []
+  country_col = []
+  industry_col = []
+  sector_col = []
+  market_cap_col = []
+  first_trade_date_col = []
+  return_1y_col = []
+  return_3y_col = []
+  return_5y_col = []
+  return_10y_col = []
+  return_col = []
 
-    # download all historical data for all symbols
-    print('downloading symbol historical data...')
-    ffn_symbol_list = selected_holdings['symbol'].str.lower().to_list()
-    comma_sep_symbols = ','.join(ffn_symbol_list)
-    ffn_data = ffn.get(comma_sep_symbols, start=st.session_state.start_date)
-    st.session_state.ffn_data=ffn_data
-    symbols_stats = ffn_data.calc_stats()
+  all_historical_data = None
+  for symbol_batch in symbol_batch_list:
+    batch_tickers = ' '.join(symbol_batch)
 
     # batch fetch stock basic info from Yahoo Finance
-    for symbol_batch in symbol_batch_list:
-      batch_tickers = ' '.join(symbol_batch)
-      print(f'enriching holdings from Yahoo finance: {batch_tickers}')
-      tickers = yf.Tickers(batch_tickers)
+    print(f'enrich holdings: {batch_tickers}')
+    tickers = yf.Tickers(batch_tickers)
+    for symbol in symbol_batch:
+      info = tickers.tickers[symbol].info
+      if info is not None:
+        country_col.append(info['country'])
+        industry_col.append(info['industry'])
+        sector_col.append(info['sector'])
+        market_cap_col.append(info['marketCap'])
+        name_col.append(info['shortName'])
+        first_trade_date_col.append(datetime.fromtimestamp(info['firstTradeDateEpochUtc'], timezone.utc).strftime('%Y-%m-%d'))
 
-      for symbol in symbol_batch:
-        # print(datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
-        info = tickers.tickers[symbol].info
-        if info is not None:
-          country_col.append(info['country'])
-          industry_col.append(info['industry'])
-          sector_col.append(info['sector'])
-          market_cap_col.append(info['marketCap'])
-          name_col.append(info['shortName'])
-          first_trade_date_col.append(datetime.fromtimestamp(info['firstTradeDateEpochUtc'], timezone.utc).strftime('%Y-%m-%d'))
-          stats = symbols_stats.get(symbol.lower(), None)
-          populate_returns(stats, return_1y_col, return_3y_col, return_5y_col, return_10y_col, return_col)
+        # get historical data one by one
+        print(f'getting historical data for {symbol.lower()} since date {st.session_state.start_date}')
+        single_historical_data = ffn.get(symbol.lower(), start=st.session_state.start_date)
+        if all_historical_data is None:
+          all_historical_data = single_historical_data
         else:
-          country_col.append(None)
-          industry_col.append(None)
-          sector_col.append(None)
-          market_cap_col.append(None)
-          name_col.append(None)
-          first_trade_date_col.append(None)
-          return_1y_col.append(None)
-          return_3y_col.append(None)
-          return_5y_col.append(None)
-          return_10y_col.append(None)
-          return_col.append(None)
+          all_historical_data = ffn.merge(single_historical_data, all_historical_data)
+        batch_stats = single_historical_data.calc_stats()
+        stats = batch_stats.get(symbol.lower(), None)
+        populate_returns(stats, return_1y_col, return_3y_col, return_5y_col, return_10y_col, return_col)
+      else:
+        country_col.append(None)
+        industry_col.append(None)
+        sector_col.append(None)
+        market_cap_col.append(None)
+        name_col.append(None)
+        first_trade_date_col.append(None)
+        return_1y_col.append(None)
+        return_3y_col.append(None)
+        return_5y_col.append(None)
+        return_10y_col.append(None)
+        return_col.append(None)
 
-    selected_holdings['amount'] = selected_holdings.apply(lambda row: (row['weight']*st.session_state.amount), axis=1)
-    selected_holdings['country'] = country_col
-    selected_holdings['industry'] = industry_col
-    selected_holdings['sector'] = sector_col
-    selected_holdings['marketCap'] = market_cap_col
-    selected_holdings['name'] = name_col
-    selected_holdings['first_trade_date'] = first_trade_date_col
-    selected_holdings['returns_1y'] = return_1y_col
-    selected_holdings['returns_3y'] = return_3y_col
-    selected_holdings['returns_5y'] = return_5y_col
-    selected_holdings['returns_10y'] = return_10y_col
-    selected_holdings['returns'] = return_col
+  selected_holdings['amount'] = selected_holdings.apply(lambda row: (row['weight']*st.session_state.amount), axis=1)
+  selected_holdings['country'] = country_col
+  selected_holdings['industry'] = industry_col
+  selected_holdings['sector'] = sector_col
+  selected_holdings['marketCap'] = market_cap_col
+  selected_holdings['name'] = name_col
+  selected_holdings['first_trade_date'] = first_trade_date_col
+  selected_holdings['returns_1y'] = return_1y_col
+  selected_holdings['returns_3y'] = return_3y_col
+  selected_holdings['returns_5y'] = return_5y_col
+  selected_holdings['returns_10y'] = return_10y_col
+  selected_holdings['returns'] = return_col
+  st.session_state.all_historical_data=all_historical_data
 
 
 def populate_returns(stats, return_1y_col, return_3y_col, return_5y_col, return_10y_col, return_col):
