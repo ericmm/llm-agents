@@ -23,7 +23,8 @@ def do_fetch_fake_holdings(ticker: str) -> pd.DataFrame:
     {"checked": True,"name": "Microsoft", "symbol": "MSFT", "shares": 100, "weight": 0.1},
     {"checked": True,"name": "Apple", "symbol": "AAPL", "shares": 200, "weight": 0.2},
     {"checked": True,"name": "Nvidia", "symbol": "NVDA", "shares": 300, "weight": 0.3},
-    {"checked": True,"name": "Amazon", "symbol": "AMZN", "shares": 400, "weight": 0.4},
+    {"checked": True,"name": "Amazon", "symbol": "AMZN", "shares": 400, "weight": 0.2},
+    {"checked": True,"name": "Arm Holdings", "symbol": "ARM", "shares": 500, "weight": 0.2},
   ])
 
 
@@ -182,16 +183,6 @@ def build_rebalance_freq_algo(rebalance_freq):
     return bt.algos.RunYearly()
 
 
-def download_history_data():
-  print('downloading benchmark historical data...')
-  data = st.session_state.all_historical_data
-  bm_data = bt.get(st.session_state.benchmark_ticker.lower(), start=st.session_state.start_date)
-  if bm_data is not None:
-    data = ffn.merge(bm_data, data)
-    data = data.dropna()
-  return data
-
-
 def calc_returns(selected_df: pd.DataFrame, strategies: list[str], rebalance_freq: str, benchmark_ticker: str):
   st.session_state.page_state = 'CALC_RETURNS'
   if len(strategies) == 0:
@@ -202,7 +193,7 @@ def calc_returns(selected_df: pd.DataFrame, strategies: list[str], rebalance_fre
     return
 
   st.session_state.benchmark_ticker = benchmark_ticker.upper()
-  data = download_history_data()
+  data = st.session_state.all_historical_data
   tests = build_back_test(selected_df, data, strategies, rebalance_freq)
 
   # run the back testing and save the result
@@ -241,15 +232,19 @@ def enrich_holdings(selected_holdings):
         sector_col.append(info['sector'])
         market_cap_col.append(info['marketCap'])
         name_col.append(info['shortName'])
-        first_trade_date_col.append(datetime.fromtimestamp(info['firstTradeDateEpochUtc'], timezone.utc).strftime('%Y-%m-%d'))
+        trade_date = datetime.fromtimestamp(info['firstTradeDateEpochUtc'],timezone.utc).strftime('%Y-%m-%d')
+        first_trade_date_col.append(trade_date)
 
         # get historical data one by one
-        print(f'getting historical data for {symbol.lower()} since date {st.session_state.start_date}')
+        print(f'getting historical data for {symbol} since date {st.session_state.start_date}')
         single_historical_data = ffn.get(symbol.lower(), start=st.session_state.start_date)
         if all_historical_data is None:
           all_historical_data = single_historical_data
         else:
           all_historical_data = ffn.merge(single_historical_data, all_historical_data)
+          fillna_with_first_day_price(all_historical_data,
+                                      single_historical_data, symbol,
+                                      trade_date)
         batch_stats = single_historical_data.calc_stats()
         stats = batch_stats.get(symbol.lower(), None)
         populate_returns(stats, return_1y_col, return_3y_col, return_5y_col, return_10y_col, return_col)
@@ -279,6 +274,13 @@ def enrich_holdings(selected_holdings):
   selected_holdings['returns_10y'] = return_10y_col
   selected_holdings['returns'] = return_col
   st.session_state.all_historical_data=all_historical_data
+
+
+def fillna_with_first_day_price(all_historical_data, single_historical_data, symbol, trade_date):
+  first_date = single_historical_data.index[0].strftime('%Y-%m-%d')
+  if first_date == trade_date:
+    price_1st_day = single_historical_data[symbol.lower()].iloc[0]
+    all_historical_data[symbol.lower()] = all_historical_data[symbol.lower()].fillna(price_1st_day)
 
 
 def populate_returns(stats, return_1y_col, return_3y_col, return_5y_col, return_10y_col, return_col):
