@@ -30,7 +30,8 @@ def do_fetch_fake_holdings(ticker: str) -> pd.DataFrame:
 
 def on_fetch_holdings(ticker: str):
   # csv upload
-  if st.session_state.get('holdings', None) is not None:
+  holdings_in_session = st.session_state.get('holdings', None)
+  if (holdings_in_session is not None) and ('checked' in holdings_in_session) :
     st.session_state.page_state = 'DATA_FETCHED'
     st.session_state.enriched = False
     return
@@ -90,6 +91,11 @@ def do_fetch_holdings(ticker: str) -> pd.DataFrame:
 
 
 def remove_uncheked_holdings(edited_data: pd.DataFrame):
+  checked_holdings = edited_data[(edited_data['checked'] == True)].index.tolist()
+  st.session_state.checked_holdings_size = len(checked_holdings)
+  if st.session_state.checked_holdings_size == 0:
+    return
+
   st.session_state.page_state = 'NEXT_STEP'
   # removing rows which are unchecked
   removed_index_list = edited_data[(edited_data['checked'] == False)].index.tolist()
@@ -368,6 +374,8 @@ if st.session_state.get('page_state', '') == 'DATA_FETCHED':
                                column_config=config,
                                disabled=('name',),
                                num_rows='dynamic')
+    if st.session_state.get('checked_holdings_size', 1) == 0:
+      st.error("At least one holding must be selected!")
     st.session_state.total_weight = edited_df.loc[edited_df['checked'] == True, 'weight'].sum()
     st.text("Tips: You can add new rows (symbol, weight) or edit weights by double click cells. \n     Remember to check the newly added rows.")
     st.text("")
