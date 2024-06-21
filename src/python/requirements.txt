@@ -15,7 +15,7 @@ lxml
 beautifulsoup4>=4.12.3
 streamlit>=1.36.0
 pandas>=2.2.2
-numpy>=1.26.4,<=2.0.0
+numpy>=1.26.4,<2.0.0
 streamlit-aggrid>=1.0.5
 bt>=1.0.0
 #alpha-vantage>=2.3.1
