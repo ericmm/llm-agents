@@ -52,3 +52,18 @@ python gpt35_agent.py
 streamlit run portfolio_mate.py
 ```
 The app is available on http://localhost:8501
+
+Or try out at https://portfoliomate.streamlit.app
+
+-------
+## Disclaimer
+
+This repository and its contents are provided "as-is" and for informational and educational purposes only.
+
+**No Financial Advice**: The information, tools, or data provided within this repository are not intended to be, and should not be construed as, financial, investment, legal, or professional advice of any kind. You should not make any financial decisions based solely on the information presented here. Always consult with a qualified financial professional before making any investment decisions.
+
+**No Responsibility for Financial Loss**: The contributors, maintainers, and creators of this repository are not responsible for any financial losses, damages, or liabilities that may arise directly or indirectly from the use of, or reliance on, the information, tools, or data contained herein. By using this repository, you acknowledge and agree that you do so at your own sole risk.
+
+**Accuracy and Completeness**: While efforts have been made to ensure the accuracy and completeness of the information within this repository, we make no guarantees, representations, or warranties, express or implied, regarding its reliability, accuracy, completeness, or suitability for any particular purpose. The content may be outdated or contain errors.
+
+**Use at Your Own Risk**: Any actions you take based on the information or tools in this repository are strictly at your own discretion and risk.
