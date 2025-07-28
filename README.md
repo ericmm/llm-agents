@@ -1,5 +1,29 @@
 # llm-agents
 
+## ⚠️ IMPORTANT DISCLAIMER ⚠️
+
+**THIS PROJECT IS NOT FINANCIAL ADVICE IN ANY WAY AND SHOULD NOT BE USED AS SUCH.**
+
+This repository and all its contents are provided "as-is" for **educational and experimental purposes only**. 
+
+### 🚫 NOT FINANCIAL ADVICE
+The information, tools, portfolio analysis, backtesting results, or any data provided within this repository are **NOT** intended to be, and should **NOT** be construed as, financial, investment, legal, or professional advice of any kind. **DO NOT** make any financial decisions based on the information presented here. Always consult with a qualified financial professional before making any investment decisions.
+
+### 💸 NO LIABILITY FOR FINANCIAL LOSSES
+The contributors, maintainers, and creators of this repository **DISCLAIM ALL LIABILITY** and are **NOT RESPONSIBLE** for any financial losses, damages, or liabilities that may arise directly or indirectly from the use of, or reliance on, the information, tools, or data contained herein. By using this repository, you acknowledge and agree that you do so **AT YOUR OWN SOLE RISK**.
+
+### 📊 EXPERIMENTAL TOOLS ONLY
+All portfolio analysis, backtesting, and financial calculations are experimental tools for learning purposes only. Past performance does not indicate future results. Financial markets are inherently risky and unpredictable.
+
+### ⚖️ LEGAL PROTECTION
+This project is licensed under the MIT License, which provides additional legal protection by disclaiming warranties and limiting liability. See the [LICENSE](LICENSE) file for full terms.
+
+**By using this software, you acknowledge that you understand and agree to these terms.**
+
+-------
+
+## Setup Instructions
+
 - Step 1: install Python3.10 and `virtualenv` (only need to do this step once)
 ```bash
 brew install python@3.10
@@ -55,15 +79,4 @@ The app is available on http://localhost:8501
 
 Or try out at https://portfoliomate.streamlit.app
 
--------
-## Disclaimer
-
-This repository and its contents are provided "as-is" and for informational and educational purposes only.
-
-**No Financial Advice**: The information, tools, or data provided within this repository are not intended to be, and should not be construed as, financial, investment, legal, or professional advice of any kind. You should not make any financial decisions based solely on the information presented here. Always consult with a qualified financial professional before making any investment decisions.
-
-**No Responsibility for Financial Loss**: The contributors, maintainers, and creators of this repository are not responsible for any financial losses, damages, or liabilities that may arise directly or indirectly from the use of, or reliance on, the information, tools, or data contained herein. By using this repository, you acknowledge and agree that you do so at your own sole risk.
-
-**Accuracy and Completeness**: While efforts have been made to ensure the accuracy and completeness of the information within this repository, we make no guarantees, representations, or warranties, express or implied, regarding its reliability, accuracy, completeness, or suitability for any particular purpose. The content may be outdated or contain errors.
-
-**Use at Your Own Risk**: Any actions you take based on the information or tools in this repository are strictly at your own discretion and risk.
+docker-compose up -d --build

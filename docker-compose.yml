@@ -5,3 +5,11 @@ services:
     restart: always
     ports:
       - "3456:3456"
+  
+  portfolio-mate:
+    build: .
+    ports:
+      - "8501:8501"
+    restart: always
+    depends_on:
+      - FreeDuckDuckGo
