@@ -56,6 +56,7 @@ def do_fetch_holdings(ticker: str) -> pd.DataFrame:
     page = browser.new_page()
     url = f'https://www.zacks.com/funds/etf/{ticker.strip().upper()}/holding'
     page.goto(url=url, timeout=180000, wait_until='load')
+    page.wait_for_selector("#etf_holding_table")
 
     holdings = None
     try:
