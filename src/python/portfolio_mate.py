@@ -238,7 +238,7 @@ def enrich_holdings(selected_holdings):
         sector_col.append(info['sector'])
         market_cap_col.append(info['marketCap'])
         name_col.append(info['shortName'])
-        trade_date = datetime.fromtimestamp(info['firstTradeDateEpochUtc'],timezone.utc).strftime('%Y-%m-%d')
+        trade_date = datetime.fromtimestamp(info['firstTradeDateMilliseconds'] / 1000, timezone.utc).strftime('%Y-%m-%d')
         first_trade_date_col.append(trade_date)
 
         # get historical data one by one
