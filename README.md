@@ -27,7 +27,6 @@ This project is licensed under the MIT License, which provides additional legal 
 - Step 1: Run llm agents 
 startup FreeGPT3.5 docker, it opens a port on 3040 
 ```bash
-cd ../..
 docker-compose up --build -d
 ```
 
