@@ -1,12 +1,11 @@
-yfinance>=0.2.40
-yahooquery>=2.3.7
-ffn>=1.0.1
-playwright>=1.44.0
-lxml
-beautifulsoup4>=4.12.3
-streamlit>=1.36.0
-pandas>=2.2.2
-numpy
-streamlit-aggrid>=1.0.5
-bt>=1.0.0
+yfinance==0.2.40
+yahooquery==2.3.7
+ffn==1.0.1
+playwright==1.44.0
+lxml==5.2.2
+beautifulsoup4==4.12.3
+streamlit==1.36.0
+pandas==2.2.2
+numpy<2.0.0
+bt==1.0.2
 

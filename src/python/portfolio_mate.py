@@ -81,8 +81,15 @@ def do_fetch_holdings(ticker: str) -> pd.DataFrame:
         # some holdings do not have symbols, e.g. 'US Dollars', etc.
         symbol = soup.a.get_text().replace('N/A', '')
 
-      shares = float(h[2].replace(',', ''))
-      weight = float(h[3].replace(',', ''))/100
+      try:
+        shares = float(h[2].replace(',', '')) if h[2].replace(',', '').strip() else 0.0
+      except (ValueError, AttributeError):
+        shares = 0.0
+      
+      try:
+        weight = float(h[3].replace(',', ''))/100 if h[3].replace(',', '').strip() else 0.0
+      except (ValueError, AttributeError):
+        weight = 0.0
       data.append({"checked": True,"name": name, "symbol": symbol, "shares": shares, "weight": weight})
 
     # Close the browser
@@ -119,10 +126,40 @@ def calc_weight_by_market_cap(selected_df: pd.DataFrame):
   symbol_col = selected_df['symbol']
   market_cap_col = selected_df['marketCap']
   total_market_cap = 0
+  
+  # Calculate total market cap, skipping None values
   for m in market_cap_col:
-    total_market_cap += m
+    if m is not None and not pd.isna(m):
+      total_market_cap += m
+  
+  # If no market cap data available, fall back to equal weights
+  if total_market_cap == 0:
+    equal_weight = 1.0 / len(symbol_col)
+    for s in symbol_col:
+      weights[s.lower()] = equal_weight
+    return weights
+  
+  # Calculate weights, using equal weight for stocks with missing market cap
+  stocks_with_market_cap = sum(1 for m in market_cap_col if m is not None and not pd.isna(m))
+  remaining_weight = 0
+  
   for idx, s in enumerate(symbol_col):
-    weights[s.lower()] = float(market_cap_col[idx] / total_market_cap)
+    market_cap = market_cap_col[idx]
+    if market_cap is not None and not pd.isna(market_cap):
+      weights[s.lower()] = float(market_cap / total_market_cap)
+    else:
+      # Reserve weight for stocks without market cap data
+      remaining_weight += 1.0 / len(symbol_col) * 0.1  # Give small weight to missing data stocks
+      
+  # Distribute remaining weight equally among stocks without market cap
+  stocks_without_market_cap = len(symbol_col) - stocks_with_market_cap
+  if stocks_without_market_cap > 0:
+    weight_per_missing = remaining_weight / stocks_without_market_cap
+    for idx, s in enumerate(symbol_col):
+      market_cap = market_cap_col[idx]
+      if market_cap is None or pd.isna(market_cap):
+        weights[s.lower()] = weight_per_missing
+        
   return weights
 
 
@@ -201,10 +238,20 @@ def calc_returns(selected_df: pd.DataFrame, strategies: list[str], rebalance_fre
 
   st.session_state.benchmark_ticker = benchmark_ticker.upper()
   data = st.session_state.all_historical_data
+  
+  if data is None:
+    st.error("No historical data available for backtesting. This could be due to network issues or invalid stock symbols.")
+    return
+    
   tests = build_back_test(selected_df, data, strategies, rebalance_freq)
 
-  # run the back testing and save the result
-  st.session_state.result = bt.run(*tests)
+  try:
+    # run the back testing and save the result
+    st.session_state.result = bt.run(*tests)
+  except Exception as e:
+    st.error(f"Backtesting failed: {str(e)}")
+    print(f"Backtesting error: {e}")
+    return
 
 
 def enrich_holdings(selected_holdings):
@@ -225,36 +272,91 @@ def enrich_holdings(selected_holdings):
   return_col = []
 
   all_historical_data = None
-  for symbol_batch in symbol_batch_list:
+  
+  # Create progress bar for user feedback
+  progress_bar = st.progress(0)
+  status_text = st.empty()
+  
+  for batch_idx, symbol_batch in enumerate(symbol_batch_list):
+    # Update progress
+    progress = (batch_idx + 1) / len(symbol_batch_list)
+    progress_bar.progress(progress)
+    status_text.text(f"Processing batch {batch_idx + 1}/{len(symbol_batch_list)}: {', '.join(symbol_batch)}")
+    
     batch_tickers = ' '.join(symbol_batch)
 
     # batch fetch stock basic info from Yahoo Finance
     print(f'enrich holdings: {batch_tickers}')
-    tickers = yf.Tickers(batch_tickers)
+    
+    # Add rate limiting between batches to avoid 429 errors
+    if batch_idx > 0:
+      time.sleep(2)  # Wait 2 seconds between batches
+    
+    try:
+      tickers = yf.Tickers(batch_tickers)
+    except Exception as e:
+      print(f'Failed to create tickers for batch {batch_tickers}: {e}')
+      # Fill with None values for this batch
+      for symbol in symbol_batch:
+        country_col.append(None)
+        industry_col.append(None)
+        sector_col.append(None)
+        market_cap_col.append(None)
+        name_col.append(None)
+        first_trade_date_col.append(None)
+        populate_returns(None, return_1y_col, return_3y_col, return_5y_col, return_10y_col, return_col)
+      continue
+        
     for symbol in symbol_batch:
-      info = tickers.tickers[symbol].info
+      try:
+        info = tickers.tickers[symbol].info
+      except Exception as e:
+        print(f'Failed to get info for {symbol}: {e}')
+        info = None
+        
       if info is not None:
-        country_col.append(info['country'])
-        industry_col.append(info['industry'])
-        sector_col.append(info['sector'])
-        market_cap_col.append(info['marketCap'])
-        name_col.append(info['shortName'])
-        trade_date = datetime.fromtimestamp(info['firstTradeDateMilliseconds'] / 1000, timezone.utc).strftime('%Y-%m-%d')
-        first_trade_date_col.append(trade_date)
+        try:
+          country_col.append(info.get('country', None))
+          industry_col.append(info.get('industry', None))
+          sector_col.append(info.get('sector', None))
+          market_cap_col.append(info.get('marketCap', None))
+          name_col.append(info.get('shortName', None))
+          
+          # Handle firstTradeDateMilliseconds safely
+          first_trade_ms = info.get('firstTradeDateMilliseconds', None)
+          if first_trade_ms:
+            trade_date = datetime.fromtimestamp(first_trade_ms / 1000, timezone.utc).strftime('%Y-%m-%d')
+          else:
+            trade_date = None
+          first_trade_date_col.append(trade_date)
 
-        # get historical data one by one
-        print(f'getting historical data for {symbol} since date {st.session_state.start_date}')
-        single_historical_data = ffn.get(symbol.lower(), start=st.session_state.start_date)
-        if all_historical_data is None:
-          all_historical_data = single_historical_data
-        else:
-          all_historical_data = ffn.merge(single_historical_data, all_historical_data)
-          fillna_with_first_day_price(all_historical_data,
-                                      single_historical_data, symbol,
-                                      trade_date)
-        batch_stats = single_historical_data.calc_stats()
-        stats = batch_stats.get(symbol.lower(), None)
-        populate_returns(stats, return_1y_col, return_3y_col, return_5y_col, return_10y_col, return_col)
+          # get historical data one by one
+          print(f'getting historical data for {symbol} since date {st.session_state.start_date}')
+          try:
+            single_historical_data = ffn.get(symbol.lower(), start=st.session_state.start_date)
+            if all_historical_data is None:
+              all_historical_data = single_historical_data
+            else:
+              all_historical_data = ffn.merge(single_historical_data, all_historical_data)
+              if trade_date:
+                fillna_with_first_day_price(all_historical_data,
+                                            single_historical_data, symbol,
+                                            trade_date)
+            batch_stats = single_historical_data.calc_stats()
+            stats = batch_stats.get(symbol.lower(), None)
+            populate_returns(stats, return_1y_col, return_3y_col, return_5y_col, return_10y_col, return_col)
+          except Exception as e:
+            print(f'Failed to get historical data for {symbol}: {e}')
+            populate_returns(None, return_1y_col, return_3y_col, return_5y_col, return_10y_col, return_col)
+        except Exception as e:
+          print(f'Error processing info for {symbol}: {e}')
+          country_col.append(None)
+          industry_col.append(None)
+          sector_col.append(None)
+          market_cap_col.append(None)
+          name_col.append(None)
+          first_trade_date_col.append(None)
+          populate_returns(None, return_1y_col, return_3y_col, return_5y_col, return_10y_col, return_col)
       else:
         country_col.append(None)
         industry_col.append(None)
@@ -268,6 +370,10 @@ def enrich_holdings(selected_holdings):
         return_10y_col.append(None)
         return_col.append(None)
 
+  # Clean up progress indicators
+  progress_bar.empty()
+  status_text.empty()
+  
   selected_holdings['amount'] = selected_holdings.apply(lambda row: (row['weight']*st.session_state.amount), axis=1)
   selected_holdings['country'] = country_col
   selected_holdings['industry'] = industry_col
